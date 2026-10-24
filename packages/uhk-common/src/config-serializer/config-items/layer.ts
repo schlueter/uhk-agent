@@ -25,6 +25,7 @@ export class Layer {
         this.uhkThemeColors = layers.uhkThemeColors;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObject(jsonObject: any, macros: Macro[], serialisationInfo: SerialisationInfo): Layer {
         switch (serialisationInfo.userConfigMajorVersion) {
             case 1:
@@ -41,6 +42,9 @@ export class Layer {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromJsonObjectV5(jsonObject, macros, serialisationInfo);
                 break;
 
@@ -67,6 +71,9 @@ export class Layer {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromBinaryV5(buffer, macros, serialisationInfo);
                 break;
 
@@ -77,6 +84,7 @@ export class Layer {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]): any {
         return {
             id: LayerName[this.id],
@@ -116,8 +124,9 @@ export class Layer {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObjectV1(jsonObject: any, macros: Macro[], serialisationInfo: SerialisationInfo): void {
-        this.modules = jsonObject.modules.map((module: any) => {
+        this.modules = jsonObject.modules.map((module) => {
             return new Module().fromJsonObject(module, macros, serialisationInfo);
         });
     }
@@ -128,9 +137,10 @@ export class Layer {
         });
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObjectV5(jsonObject: any, macros: Macro[], serialisationInfo: SerialisationInfo): void {
         this.id = LayerName[<string>jsonObject.id];
-        this.modules = jsonObject.modules.map((module: any) => {
+        this.modules = jsonObject.modules.map((module) => {
             return new Module().fromJsonObject(module, macros, serialisationInfo);
         });
     }

@@ -12,12 +12,12 @@
   },
   "license": "See in LICENSE",
   "dependencies": {
-    "uhk-common": "1.0.0"
+    "uhk-common": "file:../uhk-common"
   },
   "devDependencies": {
   },
   "scripts": {
-    "test": "cross-env NODE_OPTIONS=--loader=ts-node/esm jasmine --config=jasmine.json",
+    "test": "node --loader=ts-node/esm --test \"**/*.test.ts\"",
     "clean": "rimraf ./node_modules",
     "lint": "eslint"
   }

@@ -1,6 +1,6 @@
 import { toHexString } from 'uhk-common';
 
-export function usbDeviceJsonFormatter(key: any, value: any): any {
+export function usbDeviceJsonFormatter(key: string, value: number | undefined | null): string | number | undefined | null {
     if (value === undefined || value === null) {
         return value
     }

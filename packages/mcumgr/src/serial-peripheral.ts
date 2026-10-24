@@ -79,7 +79,7 @@ export class SerialPeripheral implements Peripheral {
         const startTime = new Date().getTime();
 
         while (true) {
-            const response = this.#serialPort.read();
+            const response = this.#serialPort.read() as Buffer;
             logger('Read response: %o', response);
             let exit = false;
 
@@ -194,7 +194,7 @@ export class SerialPeripheral implements Peripheral {
         });
     }
 
-    async #_write(data: any): Promise<void> {
+    async #_write(data: unknown): Promise<void> {
         await this.open();
 
         logger('Write packet %o', data);

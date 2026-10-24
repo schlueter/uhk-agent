@@ -14,24 +14,21 @@
             bindValue="id"
         >
             <ng-template ng-option-tmp let-option="item">
-                <div [ngClass]="{'text-body-secondary': option.disabled}">
+                <div>
                     <span [ngClass]="{'indent-dropdown-item': option.id !== '-1'}">
                             <span>{{ option.text }}</span>
                             <span class="scancode--searchterm">
                                 {{ option.additional?.explanation}}
                             </span>
                     </span>
-                    <small *ngIf="option.disabled">
-                        You can only switch to this keymap from other keymaps.
+                    <small *ngIf="keymap?.abbreviation === option.id">
+                        This is the current keymap.
                     </small>
                 </div>
             </ng-template>
         </ng-select>
     </div>
     <div class="keymap-container">
-        <div class="empty" *ngIf="!selectedKeymap?.abbreviation">
-            <img src="assets/images/base-layer--blank.svg">
-        </div>
         <svg-keyboard *ngIf="selectedKeymap?.abbreviation"
                       [moduleConfig]="selectedKeymap.layers[0].modules"
                       [embedded]="true"

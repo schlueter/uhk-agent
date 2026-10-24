@@ -18,6 +18,7 @@ export class ScrollMouseMacroAction extends MacroAction {
         this.y = other.y;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObject(jsonObject: any, serialisationInfo: SerialisationInfo): ScrollMouseMacroAction {
         switch (serialisationInfo.userConfigMajorVersion) {
             case 1:
@@ -31,6 +32,9 @@ export class ScrollMouseMacroAction extends MacroAction {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromJsonObjectV1(jsonObject);
                 break;
 
@@ -54,6 +58,9 @@ export class ScrollMouseMacroAction extends MacroAction {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromBinaryV1(buffer);
                 break;
 
@@ -64,6 +71,7 @@ export class ScrollMouseMacroAction extends MacroAction {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     toJsonObject(): any {
         return {
             macroActionType: macroActionType.ScrollMouseMacroAction,
@@ -86,6 +94,7 @@ export class ScrollMouseMacroAction extends MacroAction {
         return 'ScrollMouseMacroAction';
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fromJsonObjectV1(jsObject: any): void {
         this.assertMacroActionType(jsObject);
         this.x = jsObject.x;

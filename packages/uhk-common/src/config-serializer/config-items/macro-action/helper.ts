@@ -1,8 +1,8 @@
 import { UhkBuffer } from '../../uhk-buffer.js';
 import { SerialisationInfo } from '../serialisation-info.js';
 import { MacroAction, MacroActionId, macroActionType } from './macro-action.js';
-import { KeyMacroAction } from './key-macro-action.js';
-import { MouseButtonMacroAction } from './mouse-button-macro-action.js';
+import { JsObjectKeyMacroAction, KeyMacroAction } from './key-macro-action.js';
+import { JsObjectMouseButtonMacroAction, MouseButtonMacroAction } from './mouse-button-macro-action.js';
 import { MoveMouseMacroAction } from './move-mouse-macro-action.js';
 import { ScrollMouseMacroAction } from './scroll-mouse-macro-action.js';
 import { DelayMacroAction } from './delay-macro-action.js';
@@ -11,7 +11,7 @@ import { CommandMacroAction } from './command-macro-action.js';
 
 export class Helper {
 
-    static createMacroAction(source: MacroAction | UhkBuffer | any, serialisationInfo: SerialisationInfo): MacroAction {
+    static createMacroAction(source: MacroAction | UhkBuffer, serialisationInfo: SerialisationInfo): MacroAction {
         if (source instanceof MacroAction) {
             return Helper.fromMacroAction(source);
         } else if (source instanceof UhkBuffer) {
@@ -45,7 +45,7 @@ export class Helper {
             case MacroActionId.CommandMacroAction:
                 return new CommandMacroAction().fromBinary(buffer, serialisationInfo);
             default:
-                throw `Invalid MacroAction first byte: ${macroActionFirstByte}`;
+                throw new Error(`Invalid MacroAction first byte: ${macroActionFirstByte}`);
         }
     }
 
@@ -69,12 +69,13 @@ export class Helper {
         return newMacroAction;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     static fromJSONObject(macroAction: any, serialisationInfo: SerialisationInfo): MacroAction {
         switch (macroAction.macroActionType) {
             case macroActionType.KeyMacroAction:
-                return new KeyMacroAction().fromJsonObject(macroAction, serialisationInfo);
+                return new KeyMacroAction().fromJsonObject(macroAction as JsObjectKeyMacroAction, serialisationInfo);
             case macroActionType.MouseButtonMacroAction:
-                return new MouseButtonMacroAction().fromJsonObject(macroAction, serialisationInfo);
+                return new MouseButtonMacroAction().fromJsonObject(macroAction as JsObjectMouseButtonMacroAction, serialisationInfo);
             case macroActionType.MoveMouseMacroAction:
                 return new MoveMouseMacroAction().fromJsonObject(macroAction, serialisationInfo);
             case macroActionType.ScrollMouseMacroAction:
@@ -86,7 +87,7 @@ export class Helper {
             case macroActionType.CommandMacroAction:
                 return new CommandMacroAction().fromJsonObject(macroAction, serialisationInfo);
             default:
-                throw `Invalid MacroAction.macroActionType: "${macroAction.macroActionType}"`;
+                throw new Error(`Invalid MacroAction.macroActionType: "${macroAction.macroActionType}"`);
         }
     }
 }

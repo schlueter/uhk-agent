@@ -1,7 +1,7 @@
 import { HostBinding } from '@angular/core';
 import { Component, Input, TemplateRef } from '@angular/core';
 import { faQuestionCircle } from '@fortawesome/free-solid-svg-icons';
-import { PlacementArray } from '@ng-bootstrap/ng-bootstrap/util/positioning';
+import { PlacementArray } from '@ng-bootstrap/ng-bootstrap';
 
 @Component({
     selector: 'circle-tooltip',
@@ -11,7 +11,7 @@ import { PlacementArray } from '@ng-bootstrap/ng-bootstrap/util/positioning';
 export default class CircleTooltipComponent {
     @Input() container: string | null | undefined;
     @Input() placement: PlacementArray = ['bottom', 'top'];
-    @Input() tooltip: string | TemplateRef<any> | null | undefined;
+    @Input() tooltip: string | TemplateRef<unknown> | null | undefined;
     @Input() tooltipClass: string | null | undefined;
     @Input() width: number | null | undefined;
 

@@ -6,6 +6,101 @@ The format is loosely based on [Keep a Changelog](http://keepachangelog.com/en/1
 
 Every Agent version includes the most recent firmware version. See the [firmware changelog](https://github.com/UltimateHackingKeyboard/firmware/blob/master/CHANGELOG.md).
 
+## [11.0.0] - 2026-10-06
+
+Firmware: 18.0.3 [[release](https://github.com/UltimateHackingKeyboard/firmware/releases/tag/v18.0.3)] | Device Protocol: 4.19.0 | User Config: 15.0.0 | Hardware Config: 1.0.0
+
+- Show progress bar when starting Agent and when saving configurations.
+- Improve Firmware screen:
+  - Show progress bar when flashing firmwares.
+  - Hide the log by default
+  - Make "connect device" requests more prominent.
+- Add copy/paste layer support.
+- Show macro key assignments on the macro editor page.
+- Group macros in the sidebar.
+- Require user approval before downloading Agent updates.
+- Add minimize to tray support.
+- Indicate UHK's currently active keymap in Agent.
+- Add per-key notes with keyboard tooltips.
+- Add a Key language setting for non-US scancode labels.
+- Replace the theme select with an icon button group.
+- Keep the Settings and About menu items reachable via a sticky footer in the side menu.
+- Improve the scancode selector with a tiled category layout.
+- Keep user configurations in sync via a shared configuration file.
+- Remember the user configuration import/export folder.
+- Replace the drag-and-drop library and animate list reordering.
+- Show the copied layer origin in the paste tooltip.
+- Allow direct entry of slider values.
+- Add a back link when jumping from the key action popover to a macro.
+- Expand macro field limits according to user configuration data types.
+- Make host connection management slot-focused instead of host-focused.
+- Accesibility: improve click-only controls behavior and make keymap SVG keys findable with VoiceOver.
+- Fix: make doc destination writable.
+- Fix: stop status buffer from splitting and dropping binding lines.
+- Fix: refuse importing a user configuration newer than Agent supports, and refuse saving one newer than the firmware supports.
+- Fix: keep keyboard names persistent when resetting the configuration.
+- Fix: allow adding B/M/S scancode tags when a named key already uses that code.
+- Fix: skip enabling the Zephyr log after a UHK 60 firmware update.
+- Fix: wait only 500 ms on Linux for the OS to initialize the serial peripheral during firmware upgrades.
+
+## [10.1.0] - 2026-06-23
+
+Firmware: 17.2.0 [[release](https://github.com/UltimateHackingKeyboard/firmware/releases/tag/v17.2.0)] | Device Protocol: 4.17.0 | User Config: 14.0.0 | Hardware Config: 1.0.0
+
+- Implement new logging/shell access with vt100 support.
+- Make keyboard names persistent when sharing a single config between multiple uhks.
+- Improve Typing Behavior page wording.
+- Fix: autocompletion grammar fallback.
+- Fix: autocompletion freeze on `tapKeySeq f1 f1 f1 f1...` and other ambiguous expressions.
+
+## [10.0.0] - 2026-04-28
+
+Firmware: 17.0.0 [[release](https://github.com/UltimateHackingKeyboard/firmware/releases/tag/v17.0.0)] | Device Protocol: 4.17.0 | User Config: 14.0.0 | Hardware Config: 1.0.0
+
+- Rework the Typing Behavior page in order to suppoort new firmware features. `USERCONFIG:MAJOR`
+- Reassing "Save layout svg" action to Ctrl+Shift+S.
+
+## [9.0.1] - 2026-01-26
+
+Firmware: 16.1.1 [[release](https://github.com/UltimateHackingKeyboard/firmware/releases/tag/v16.1.1)] | Device Protocol: 4.17.0 | User Config: 13.0.0 | Hardware Config: 1.0.0
+
+- Make pasting work.
+- Generate build for ARM64.
+- Escape macro names in the status buffer parser. Thanks for reporting, [@hastefuI](https://github.com/hastefuI)!
+- Support new status buffer format in which the error message is more than 4 lines, starting from firmware 16.1.0
+- Index host connections from 1 instead of 0.
+- Allow saving the current layer as SVG.
+
+## [9.0.0] - 2025-12-24
+
+Firmware: 16.0.0 [[release](https://github.com/UltimateHackingKeyboard/firmware/releases/tag/v16.0.0)] | Device Protocol: 4.17.0 | User Config: **13.0.0** | Hardware Config: 1.0.0
+
+- Handle macro arguments. `USERCONFIG:MINOR`
+- Save Agent and firmware version information to the user configuration for debugging purposes. `USERCONFIG:MAJOR`
+- Display user-friendly warning when the digital signature of Agent is invalid.
+- Relax builtFirmwareUserConfig version constraints to make firmware versions work with a wider range of Agent versions.
+
+## [8.0.1] - 2025-11-09
+
+Firmware: 15.3.0 [[release](https://github.com/UltimateHackingKeyboard/firmware/releases/tag/v15.3.0)] | Device Protocol: 4.**17.0** | User Config: 13.0.0 | Hardware Config: 1.0.0
+
+**Windows users! Auto-update won't update to this version because the digital signature of the installer has changed. Update manually this time, and auto-update will work again.**
+
+- Upgrade to the latest Electron to make Agent run seamlessly on macOS Tahoe.
+- Make the error panel closeable by clicking on the close button.
+- Prevent firmware version checks during firmware upgrades. `DEVICEPROTOCOL:MINOR`
+- Make machine wide installation on Windows possible.
+- Allow switching to the same keymap, which is useful from overridden, descendant keymaps.
+- Fix the handling of non-alphanumeric characters in keymap abbreviations.
+- Fix the filling out of the scancode field of newly created macro items when capturing keystrokes.
+- Show warning when creating layer switch action on all keymaps targeting a non-existing layer.
+- Enhance the version information tooltip of Agent upgrade page.
+- Add `--print-hardware-configuration` command line argument.
+- Add `--write-hardware-configuration` command line argument.
+- Add `--print-status-buffer` command line argument.
+- Add `--restore-user-configuration` command line argument.
+- Add `--capture-oled` command line argument.
+
 ## [8.0.0] - 2025-07-10
 
 Firmware: 15.0.1 [[release](https://github.com/UltimateHackingKeyboard/firmware/releases/tag/v15.0.1)] | Device Protocol: 4.15.0 | User Config: **12.0.0** | Hardware Config: 1.0.0

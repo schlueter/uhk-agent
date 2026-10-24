@@ -1,12 +1,12 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { Action, Store } from '@ngrx/store';
 
 import { from, Observable, of } from 'rxjs';
 import { map, switchMap, catchError, reduce, mergeMap, withLatestFrom } from 'rxjs/operators';
 
-import { Constants } from 'uhk-common';
+import { AGENT_CONTRIBUTORS_GITHUB_API_URL } from 'uhk-common';
 
 import { AppState, contributors } from '../index';
 import { UHKContributor } from '../../models/uhk-contributor';
@@ -20,6 +20,10 @@ import {
 
 @Injectable()
 export class ContributorsEffect {
+    private readonly actions$ = inject(Actions);
+    private readonly http = inject(HttpClient);
+    private readonly store = inject<Store<AppState>>(Store);
+
     getContributors$: Observable<Action> = createEffect(() => this.actions$
         .pipe(
             ofType<GetAgentContributorsAction>(ActionTypes.GetAgentContributors),
@@ -36,7 +40,7 @@ export class ContributorsEffect {
     fetchContributors$: Observable<Action> = createEffect(() => this.actions$
         .pipe(
             ofType<FetchAgentContributorsAction>(ActionTypes.FetchAgentContributors),
-            mergeMap(() => this.http.get<UHKContributor[]>(Constants.AGENT_CONTRIBUTORS_GITHUB_API_URL)),
+            mergeMap(() => this.http.get<UHKContributor[]>(AGENT_CONTRIBUTORS_GITHUB_API_URL)),
             switchMap((response: UHKContributor[]) => {
                 return from(response).pipe(
                     mergeMap(
@@ -59,10 +63,7 @@ export class ContributorsEffect {
                     return new AgentContributorsAvailableAction(contributorsWithAvatars);
                 }
             ),
-            catchError(error => of(new AgentContributorsNotAvailableAction(error)))
+            catchError((error: Error) => of(new AgentContributorsNotAvailableAction(error)))
         )
     );
-
-    constructor(private store: Store<AppState>, private actions$: Actions, private http: HttpClient) {
-    }
 }

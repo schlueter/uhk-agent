@@ -83,10 +83,19 @@ export interface CommandLineArgs extends DeviceIdentifier {
      * Report Id that used for USB communication
      */
     'report-id'?: number;
+
+    /**
+     * Agent shows the invalid code sign signature error 10 seconds after start
+     */
+    'simulate-invalid-codesign-signature'?: boolean;
     /**
      * simulate privilege escalation error
      */
     spe?: boolean;
+    /**
+     * Start the Agent window hidden in the system tray.
+     */
+    'start-minimized-to-tray'?: boolean;
     /**
      * Use USB non-blocking communication
      */

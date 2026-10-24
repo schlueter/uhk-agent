@@ -34,9 +34,9 @@ function splitToErrorBlocks(text: string): string[] {
     return errorBlocks;
 }
 
-function transformToErrorBlock(macros: Macro[], block: string): any {
+function transformToErrorBlock(macros: Macro[], block: string): string {
     const lines = block.split('\n');
-    if (lines.length !== 4) {
+    if (lines.length < 4) {
         return escapeHtml(block);
     }
 
@@ -67,7 +67,12 @@ function transformToErrorBlock(macros: Macro[], block: string): any {
     }
 
     const url = `#/macro/${macro.id}?actionIndex=${macroActionIndex}&lineNr=${lineNr}&columnNr=${columnNr}&inlineEdit=true`;
-    const newLine2 = `${line1Result[1]}<a href="${url}">${escapeHtml(line1Result[2])}</a>`;
+    const newLine2 = `${escapeHtml(line1Result[1])}<a href="${url}">${escapeHtml(line1Result[2])}</a>`;
+    // Keep binding-site lines and nested location-stack lines (firmware may emit more than 3).
+    const extraLines = lines
+        .slice(3)
+        .map(line => escapeHtml(line))
+        .join('\n');
 
-    return `${lines[0]}\n${newLine2}\n${lines[2]}\n`;
+    return `${escapeHtml(lines[0])}\n${newLine2}\n${escapeHtml(lines[2])}\n${extraLines}`;
 }

@@ -8,7 +8,6 @@ import {
     Output,
 } from '@angular/core';
 import { animate, keyframes, state, style, transition, trigger } from '@angular/animations';
-import { DragulaService } from 'ng2-dragula';
 import { faPlus } from '@fortawesome/free-solid-svg-icons';
 
 import { KeyMacroAction, KeystrokeType, Macro, MacroAction, MacroKeySubAction } from 'uhk-common';
@@ -77,48 +76,21 @@ export class MacroListComponent implements AfterViewChecked, OnDestroy {
     @Output() selectedMacroActionIdChanged = new EventEmitter<SelectedMacroActionIdModel>();
 
     newMacro: Macro = undefined;
-    MACRO_ACTIONS = 'macroActions';
+    readonly dragAndDropHandle = '.action--movable';
     faPlus = faPlus;
     scrollTopPosition: number;
-    isMacroReordering = false;
 
     private scrollToBottomIntervalTimer: number;
     private scrollToBottomSetTimeoutTimer: number;
-
-    constructor(private dragulaService: DragulaService) {
-        dragulaService.createGroup(this.MACRO_ACTIONS, {
-            moves: (el, container, handle) => {
-                if (!handle) {
-                    return false;
-                }
-
-                let element = handle;
-                while (element) {
-                    if (element.classList.contains('action--movable')) {
-                        return true;
-                    }
-                    element = element.parentElement;
-                }
-
-                return false;
-            }
-        });
-    }
 
     ngAfterViewChecked(): void {
         if (this.scrollTopPosition) {
             window.scrollTo(window.scrollX, this.scrollTopPosition);
             this.scrollTopPosition = undefined;
         }
-
-        if (this.isMacroReordering) {
-            this.isMacroReordering = false;
-        }
     }
 
     ngOnDestroy(): void {
-        this.dragulaService.destroy(this.MACRO_ACTIONS);
-
         this.clearScrollToBottomInterval();
 
         if (this.scrollToBottomSetTimeoutTimer) {
@@ -191,7 +163,6 @@ export class MacroListComponent implements AfterViewChecked, OnDestroy {
     }
 
     macroActionReordered(macroActions: MacroAction[]): void {
-        this.isMacroReordering = true;
         this.scrollTopPosition = window.scrollY;
         this.reorder.emit({
             macroId: this.macro.id,
@@ -199,11 +170,7 @@ export class MacroListComponent implements AfterViewChecked, OnDestroy {
         });
     }
 
-    macroActionTrackByFn(index: number, macroAction: MacroAction): string {
-        if (this.isMacroReordering) {
-            return index.toString() + macroAction.toString();
-        }
-
+    macroActionTrackByFn(index: number): string {
         return index.toString();
     }
 
@@ -216,7 +183,7 @@ export class MacroListComponent implements AfterViewChecked, OnDestroy {
             window.scrollTo(document.body.scrollLeft, document.body.scrollHeight);
         }, ANIMATION_INTERVAL);
 
-        this.scrollToBottomSetTimeoutTimer = window.setTimeout(this.clearScrollToBottomInterval.bind(this), ANIMATION_TIMEOUT);
+        this.scrollToBottomSetTimeoutTimer = window.setTimeout(() => this.clearScrollToBottomInterval(), ANIMATION_TIMEOUT);
     }
 
     private clearScrollToBottomInterval(): void {

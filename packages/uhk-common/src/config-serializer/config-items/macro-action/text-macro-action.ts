@@ -14,6 +14,7 @@ export class TextMacroAction extends MacroAction {
         this.text = other.text;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObject(jsonObject: any, serialisationInfo: SerialisationInfo): TextMacroAction {
         switch (serialisationInfo.userConfigMajorVersion) {
             case 1:
@@ -27,6 +28,9 @@ export class TextMacroAction extends MacroAction {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromJsonObjectV1(jsonObject);
                 break;
 
@@ -50,6 +54,9 @@ export class TextMacroAction extends MacroAction {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromBinaryV1(buffer);
                 break;
 
@@ -60,6 +67,7 @@ export class TextMacroAction extends MacroAction {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     toJsonObject(): any {
         return {
             macroActionType: macroActionType.TextMacroAction,
@@ -80,6 +88,7 @@ export class TextMacroAction extends MacroAction {
         return 'TextMacroAction';
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fromJsonObjectV1(jsObject: any): void {
         this.assertMacroActionType(jsObject);
         this.text = jsObject.text;

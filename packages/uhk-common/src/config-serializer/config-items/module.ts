@@ -1,6 +1,14 @@
 import { assertUInt8 } from '../assert.js';
 import { UhkBuffer } from '../uhk-buffer.js';
-import { KeyActionHelper, KeyAction, NoneAction, PlayMacroAction, SwitchKeymapAction } from './key-action/index.js';
+import {
+    KeyActionHelper,
+    KeyAction,
+    NoneAction,
+    MacroArgumentAction,
+    PlayMacroAction,
+    SwitchKeymapAction,
+} from './key-action/index.js';
+import { KeyLabelAction } from './key-action/key-label-action.js';
 import { NoneBlockAction } from './key-action/none-block-action.js';
 import { Macro } from './macro.js';
 import { SerialisationInfo } from './serialisation-info.js';
@@ -23,6 +31,7 @@ export class Module {
         this.keyActions = other.keyActions.map(keyAction => KeyActionHelper.fromKeyAction(keyAction));
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObject(jsonObject: any, macros: Macro[], serialisationInfo: SerialisationInfo): Module {
         switch (serialisationInfo.userConfigMajorVersion) {
             case 1:
@@ -36,6 +45,9 @@ export class Module {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromJsonObjectV1(jsonObject, macros, serialisationInfo);
                 break;
 
@@ -59,6 +71,9 @@ export class Module {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromBinaryV1(buffer, macros, serialisationInfo);
                 break;
 
@@ -69,12 +84,16 @@ export class Module {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]): any {
         return {
             id: this.id,
             keyActions: this.keyActions.map(keyAction => {
                 if (keyAction && (macros || !(keyAction instanceof PlayMacroAction || keyAction instanceof SwitchKeymapAction))) {
-                    return keyAction.toJsonObject(serialisationInfo, macros);
+                    return {
+                        ...keyAction.toJsonObject(serialisationInfo, macros),
+                        ...labelToJson(keyAction)
+                    };
                 }
 
                 return new NoneAction().toJsonObject(serialisationInfo);
@@ -84,11 +103,12 @@ export class Module {
 
     toBinary(buffer: UhkBuffer, serialisationInfo: SerialisationInfo, userConfiguration: UserConfiguration): void {
         buffer.writeUInt8(this.id);
-        buffer.writeCompactLength(this.keyActions.length); // write the original key actions length and not the compressed !!!
+        buffer.writeCompactLength(this.getKeyActionsCount());
 
         const keyActions = this.getCompressedKeyActions()
         for (const keyAction of keyActions) {
             keyAction.toBinary(buffer, serialisationInfo, userConfiguration);
+            writeKeyLabelAction(buffer, keyAction);
         }
     }
 
@@ -118,10 +138,15 @@ export class Module {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObjectV1(jsonObject: any, macros: Macro[], serialisationInfo: SerialisationInfo): void {
         this.id = jsonObject.id;
-        this.keyActions = jsonObject.keyActions.map((keyAction: any) => {
-            return KeyActionHelper.fromJSONObject(keyAction, macros, serialisationInfo);
+        this.keyActions = jsonObject.keyActions.map((keyActionJson) => {
+            const keyAction = KeyActionHelper.fromJSONObject(keyActionJson, macros, serialisationInfo);
+            if (keyActionJson?.label) {
+                keyAction.label = keyActionJson.label;
+            }
+            return keyAction;
         });
     }
 
@@ -129,10 +154,27 @@ export class Module {
         this.id = buffer.readUInt8();
         const keyActionsLength: number = buffer.readCompactLength();
         this.keyActions = [];
+        let lastKeyAction: KeyAction;
+        let processedKeyActionsCount = 0
 
-        while (this.keyActions.length < keyActionsLength) {
+        while (processedKeyActionsCount < keyActionsLength) {
             const keyAction = KeyActionHelper.createKeyAction(buffer, macros, serialisationInfo)
-            if (keyAction instanceof NoneBlockAction) {
+
+            if (keyAction instanceof KeyLabelAction) {
+                if (!lastKeyAction) {
+                    throw Error(`${processedKeyActionsCount} key label has no preceding key action`);
+                }
+                lastKeyAction.label = keyAction.label;
+            }
+            else if (keyAction instanceof MacroArgumentAction) {
+                if (lastKeyAction instanceof PlayMacroAction) {
+                    lastKeyAction.macroArguments.push(keyAction);
+                }
+                else {
+                    throw Error(`${processedKeyActionsCount} key action is not PlayMacroAction`);
+                }
+            }
+            else if (keyAction instanceof NoneBlockAction) {
                 for (let i = 0; i < keyAction.blockCount; i++) {
                     const noneAction = new NoneAction();
                     noneAction.r = keyAction.r;
@@ -140,11 +182,17 @@ export class Module {
                     noneAction.b = keyAction.b;
 
                     this.keyActions.push(noneAction);
+                    processedKeyActionsCount++
                 }
+                // minus 1 because we add +1 at the end of the loop
+                processedKeyActionsCount--
             }
             else {
+                lastKeyAction = keyAction;
                 this.keyActions.push(keyAction);
             }
+
+            processedKeyActionsCount++
         }
     }
 
@@ -154,13 +202,14 @@ export class Module {
         for (let i = 0; i < this.keyActions.length;) {
             const keyAction = this.keyActions[i] || new NoneAction();
 
-            if (keyAction instanceof NoneAction) {
+            if (keyAction instanceof NoneAction && !keyAction.label) {
                 let blockCount = 1
 
                 for (let j = i + 1; j < this.keyActions.length; j++) {
                     const nextAction = this.keyActions[j] || new NoneAction();
 
                     if (nextAction instanceof NoneAction
+                        && !nextAction.label
                         && keyAction.r === nextAction.r
                         && keyAction.g === nextAction.g
                         && keyAction.b === nextAction.b) {
@@ -195,4 +244,41 @@ export class Module {
 
         return result;
     }
+
+    getKeyActionsCount(): number {
+        let count  = 0
+
+        for (const keyAction of this.keyActions) {
+            count++;
+
+            if (keyAction instanceof PlayMacroAction) {
+                count += keyAction.macroArguments.length;
+            }
+
+            if (keyAction?.label) {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+}
+
+function labelToJson(keyAction: KeyAction): { label?: string } {
+    if (keyAction.label) {
+        return { label: keyAction.label };
+    }
+
+    return {};
+}
+
+function writeKeyLabelAction(buffer: UhkBuffer, keyAction: KeyAction): void {
+    if (!keyAction.label) {
+        return;
+    }
+
+    const keyLabelAction = new KeyLabelAction();
+    keyLabelAction.label = keyAction.label;
+    keyLabelAction.toBinary(buffer);
 }

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { Injectable } from '@angular/core';
 import * as log from 'electron-log/renderer';
 import { LogService, logUserConfigHelper, UserConfiguration } from 'uhk-common';
@@ -14,6 +16,7 @@ export class ElectronLogService extends LogService {
     }
 
     error(...args: any[]): void {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         log.error(...args);
     }
 
@@ -22,6 +25,7 @@ export class ElectronLogService extends LogService {
             return;
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this.log(...args);
     }
 
@@ -30,6 +34,7 @@ export class ElectronLogService extends LogService {
             return;
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this.log(...args);
     }
 
@@ -38,10 +43,12 @@ export class ElectronLogService extends LogService {
             return;
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this.log(...args);
     }
 
     protected log(...args: any[]): void {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         log.log(...args);
     }
 }

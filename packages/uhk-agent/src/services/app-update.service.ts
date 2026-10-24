@@ -2,9 +2,14 @@ import { ipcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { UpdateInfo, ProgressInfo } from 'builder-util-runtime';
 import isDev from 'electron-is-dev';
-import storage from 'electron-settings';
+import { inspect } from 'node:util';
 
-import { ApplicationSettings, IpcEvents, LogService } from 'uhk-common';
+import {
+    CommandLineArgs,
+    ERR_UPDATER_INVALID_SIGNATURE,
+    IpcEvents,
+    LogService,
+} from 'uhk-common';
 import { MainServiceBase } from './main-service-base';
 import { getUpdaterLoggerService } from '../util';
 
@@ -16,13 +21,20 @@ export class AppUpdateService extends MainServiceBase {
 
     constructor(protected logService: LogService,
                 protected win: Electron.BrowserWindow,
-                private app: Electron.App) {
+                private options: CommandLineArgs) {
         super(logService, win);
 
         autoUpdater.logger = getUpdaterLoggerService(logService);
 
         this.initListeners();
         logService.misc('[AppUpdateService] init success');
+
+        if (options['simulate-invalid-codesign-signature']) {
+            logService.misc('[AppUpdateService] init simulate invalid codesign timer');
+            setTimeout(() => {
+                this.sendIpcToWindow(IpcEvents.autoUpdater.autoUpdateError, ERR_UPDATER_INVALID_SIGNATURE);
+            }, 10000)
+        }
     }
 
     private initListeners() {
@@ -31,9 +43,8 @@ export class AppUpdateService extends MainServiceBase {
             this.sendIpcToWindow(IpcEvents.autoUpdater.checkingForUpdate);
         });
 
-        autoUpdater.on('update-available', async (info: UpdateInfo) => {
-            this.logService.misc('[AppUpdateService] update available. Downloading started');
-            await autoUpdater.downloadUpdate();
+        autoUpdater.on('update-available', (info: UpdateInfo) => {
+            this.logService.misc('[AppUpdateService] update available');
             this.sendIpcToWindow(IpcEvents.autoUpdater.updateAvailable, info);
         });
 
@@ -44,11 +55,17 @@ export class AppUpdateService extends MainServiceBase {
             }
         });
 
-        autoUpdater.on('error', (ev: any, err: string) => {
-            this.logService.error('[AppUpdateService] error', err);
+        autoUpdater.on('error', (error: Error, message: string) => {
+            this.logService.error('[AppUpdateService] error', inspect(error));
+            this.logService.error('[AppUpdateService] error message', message);
+            if ((error as NodeJS.ErrnoException)?.code === ERR_UPDATER_INVALID_SIGNATURE) {
+                this.sendIpcToWindow(IpcEvents.autoUpdater.autoUpdateError, ERR_UPDATER_INVALID_SIGNATURE);
+                return
+            }
+
             let msg = 'Electron updater error';
-            if (err) {
-                msg = err.substr(0, 100);
+            if (message) {
+                msg = message.substring(0, 100);
             }
 
             this.sendIpcToWindow(IpcEvents.autoUpdater.autoUpdateError, msg);
@@ -68,15 +85,27 @@ export class AppUpdateService extends MainServiceBase {
             return autoUpdater.quitAndInstall(true, true);
         });
 
-        ipcMain.on(IpcEvents.app.appStarted, async () => {
-            if (await this.checkForUpdateAtStartup()) {
-                this.sendAutoUpdateNotification = false;
-                this.logService.misc('[AppUpdateService] app started. Automatically check for update.');
-                this.checkForUpdate();
-            }
+        ipcMain.on(IpcEvents.autoUpdater.downloadUpdate, () => {
+            this.logService.misc('[AppUpdateService] download update from renderer process');
+            autoUpdater.downloadUpdate()
+                .catch((error) => {
+                    this.logService.error('[AppUpdateService] Error when downloading update: ', error);
+                });
         });
 
-        ipcMain.on(IpcEvents.autoUpdater.checkForUpdate, (event: Electron.Event, args: any[]) => {
+        ipcMain.on(IpcEvents.app.appStarted, () => {
+            this.logService.misc('[AppUpdateService] app started');
+            this.checkForUpdateAtStartup()
+                .then((checkForUpdate) => {
+                    if (checkForUpdate) {
+                        this.sendAutoUpdateNotification = false;
+                        this.logService.misc('[AppUpdateService] app started. Check for new Agent version on startup.');
+                        this.checkForUpdate();
+                    }
+                })
+        });
+
+        ipcMain.on(IpcEvents.autoUpdater.checkForUpdate, (event: Electron.Event, args) => {
             const allowPrerelease: boolean = args[0];
             const logMsg = `[AppUpdateService] checkForUpdate request from renderer process. Allow prerelease: ${allowPrerelease}`;
             this.logService.misc(logMsg);
@@ -114,17 +143,4 @@ export class AppUpdateService extends MainServiceBase {
 
         return checkForUpdateOnStartUp;
     }
-
-    private async getApplicationSettings(): Promise<ApplicationSettings> {
-        const value = await storage.get('application-settings');
-        if (!value) {
-            return {
-                checkForUpdateOnStartUp: true,
-                everAttemptedSavingToKeyboard: false
-            };
-        }
-
-        return JSON.parse(<string>value);
-    }
-
 }

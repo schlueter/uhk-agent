@@ -21,7 +21,9 @@ const optionDefinitions: commandLineArgs.OptionDefinition[] = [
     { name: 'reenumerate-and-exit', type: String },
     { name: 'report-id', type: Number },
     { name: 'serial-number', type: String },
+    { name: 'simulate-invalid-codesign-signature', type: Boolean },
     { name: 'spe', type: Boolean }, // simulate privilege escalation error
+    { name: 'start-minimized-to-tray', type: Boolean },
     { name: 'usb-interface', type: Number },
     { name: 'usb-non-blocking', type: Boolean },
     { name: 'vid', type: Number },
@@ -121,8 +123,18 @@ const sections: commandLineUsage.Section[] = [
                 type: String
             },
             {
+                name: 'simulate-invalid-codesign-signature',
+                description: 'Agent shows the invalid code sign signature error 10 seconds after start',
+                type: Boolean
+            },
+            {
                 name: 'spe',
                 description: 'Simulate privilege escalation error',
+                type: Boolean
+            },
+            {
+                name: 'start-minimized-to-tray',
+                description: 'Start the Agent window hidden in the system tray',
                 type: Boolean
             },
             {

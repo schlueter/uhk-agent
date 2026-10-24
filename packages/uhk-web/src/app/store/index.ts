@@ -1,26 +1,26 @@
 import { routerReducer, RouterReducerState } from '@ngrx/router-store';
 import { ActionReducerMap, createSelector, MetaReducer } from '@ngrx/store';
 import { storeFreeze } from 'ngrx-store-freeze';
-import { gt } from 'semver';
 import {
     ApplicationSettings,
     AppTheme,
-    AppThemeSelect,
     BacklightingMode,
-    Constants,
-    createMd5Hash,
+        createMd5Hash,
     FirmwareRepoInfo,
     getEmptyKeymap,
     HardwareConfiguration,
     HardwareModules,
     HistoryFileInfo as CommonHistoryFileInfo,
     HostConnections,
-    isVersionGte,
+    isDeviceProtocolSupportActiveKeymapIndex,
+    isVersionGt,
+    isVersionGteV1CanUndefined,
     Keymap,
     LayerName,
     LEFT_HALF_MODULE,
     LEFT_KEY_CLUSTER_MODULE,
     LeftSlotModules,
+    MAX_ALLOWED_MACROS,
     PlayMacroAction,
     RIGHT_TRACKPOINT_MODULE,
     RightSlotModules,
@@ -36,6 +36,7 @@ import {
 } from 'uhk-common';
 import { environment } from '../../environments/environment';
 import {
+    AppUpdateNotificationViewModel,
     ConfigSizeState,
     DeviceUiStates,
     DongleOperations,
@@ -43,8 +44,10 @@ import {
     DonglePairingStates,
     EraseBleSettingsButtonState,
     FirmwareUpgradeState,
+    HalvesPairingState,
     HistoryFileInfo,
     MacroMenuItem,
+    MacroMenuTreeNode,
     ModuleFirmwareUpgradeStates,
     OutOfSpaceWarningData,
     OutOfSpaceWarningType,
@@ -57,6 +60,8 @@ import {
 import { PrivilagePageSate } from '../models/privilage-page-sate';
 import { SelectOptionData } from '../models/select-option-data';
 import { defaultUhkThemeColors } from '../util/default-uhk-theme-colors';
+import { escapeHtml } from '../util/escape-html';
+import { groupMacrosByName } from '../util/group-macros-by-name';
 import { parseStatusBuffer } from '../util/status-buffer-parser';
 import { addMissingModuleConfigs } from './reducers/add-missing-module-configs';
 
@@ -115,7 +120,9 @@ export const metaReducers: MetaReducer<AppState>[] = environment.production
 
 export const advanceSettingsState = (state: AppState) => state.advanceSettings;
 export const getIsAdvancedSettingsMenuVisible = createSelector(advanceSettingsState, fromAdvancedSettings.isAdvancedSettingsMenuVisible);
+export const getAlwaysEnableAdvancedMode = createSelector(advanceSettingsState, fromAdvancedSettings.isAlwaysEnableAdvancedMode);
 export const isLeftHalfPairing = createSelector(advanceSettingsState, fromAdvancedSettings.isLeftHalfPairing);
+export const isCheckingHalvesBond = createSelector(advanceSettingsState, fromAdvancedSettings.isCheckingHalvesBond);
 export const getIsI2cDebuggingEnabled = createSelector(advanceSettingsState, fromAdvancedSettings.isI2cDebuggingEnabled);
 export const isI2cDebuggingRingBellEnabled = createSelector(advanceSettingsState, fromAdvancedSettings.isI2cDebuggingRingBellEnabled);
 
@@ -137,6 +144,8 @@ export const getMacroMap = createSelector(userConfigState, fromUserConfig.getMac
 export const lastEditedKey = createSelector(userConfigState, fromUserConfig.lastEditedKey);
 export const getOpenPopover = createSelector(userConfigState, fromUserConfig.getOpenPopover);
 export const getSelectedLayerOption = createSelector(userConfigState, fromUserConfig.getSelectedLayerOption);
+export const getHasCopiedLayer = createSelector(userConfigState, fromUserConfig.getHasCopiedLayer);
+export const getCopiedLayerOrigin = createSelector(userConfigState, fromUserConfig.getCopiedLayerOrigin);
 export const getLayerOptions = createSelector(userConfigState, fromUserConfig.getLayerOptions);
 export const getSecondaryRoleOptions = createSelector(getSelectedLayerOption, getLayerOptions,
     (selectedLayer, layerOptions): SelectOptionData[] => {
@@ -171,12 +180,12 @@ export const backlightingColorPalette = createSelector(userConfigState, fromUser
 export const isBacklightingColoring = createSelector(userConfigState, fromUserConfig.isBacklightingColoring);
 export const selectedBacklightingColor = createSelector(userConfigState, fromUserConfig.selectedBacklightingColor);
 export const selectedBacklightingColorIndex = createSelector(userConfigState, fromUserConfig.selectedBacklightingColorIndex);
-export const getKeymapOptions = createSelector(getKeymaps, getSelectedKeymap, (keymaps, selectedKeymap): SelectOptionData[] => {
+export const calculateTypingBehaviorPresets = createSelector(userConfigState, fromUserConfig.calculateTypingBehaviorPresets);
+export const getKeymapOptions = createSelector(getKeymaps, (keymaps): SelectOptionData[] => {
     return keymaps.map(keymap => {
         return {
             id: keymap.abbreviation,
             text: keymap.name,
-            disabled: keymap.abbreviation === selectedKeymap.abbreviation
         };
     });
 });
@@ -189,6 +198,7 @@ export const getPrevUserConfiguration = createSelector(appState, fromApp.getPrev
 export const runningInElectron = createSelector(appState, fromApp.runningInElectron);
 export const getKeyboardLayout = createSelector(appState, fromApp.getKeyboardLayout);
 export const deviceConfigurationLoaded = createSelector(appState, fromApp.deviceConfigurationLoaded);
+export const getConfigurationLoadingProgress = createSelector(appState, fromApp.getConfigurationLoadingProgress);
 export const getOperatingSystem = createSelector(appState, fromSelectors.getOperatingSystem);
 export const keypressCapturing = createSelector(appState, fromApp.keypressCapturing);
 export const runningOnNotSupportedWindows = createSelector(appState, fromApp.runningOnNotSupportedWindows);
@@ -197,16 +207,25 @@ export const firmwareUpgradeAllowed = createSelector(runningOnNotSupportedWindow
 export const getEverAttemptedSavingToKeyboard = createSelector(appState, fromApp.getEverAttemptedSavingToKeyboard);
 export const getUdevFileContent = createSelector(appState, fromApp.getUdevFileContent);
 export const getAnimationEnabled = createSelector(appState, fromApp.getAnimationEnabled);
+export const getMacroGroupingSettings = createSelector(appState, fromApp.getMacroGroupingSettings);
+export const getMinimizeToTray = createSelector(appState, fromApp.getMinimizeToTray);
 export const getAppTheme = createSelector(appState, fromApp.getAppTheme);
+export const getKeyLanguage = createSelector(appState, fromApp.getKeyLanguage);
+export const getSharedConfigurationFilePath = createSelector(appState, fromApp.getSharedConfigurationFilePath);
+export const getDetectSharedConfigurationChanges = createSelector(appState, fromApp.getDetectSharedConfigurationChanges);
+export const getSharedConfigChange = createSelector(appState, fromApp.getSharedConfigChange);
 export const getUhkThemeColors = createSelector(getAppTheme, (theme): UhkThemeColors => {
     return  defaultUhkThemeColors(theme);
 });
 export const getPlatform = createSelector(appState, fromApp.getPlatform);
+export const isColorPickerEyeDropperEnabled = createSelector(appState, fromApp.isColorPickerEyeDropperEnabled);
 
 export const appUpdateState = (state: AppState) => state.appUpdate;
 export const getShowAppUpdateAvailable = createSelector(appUpdateState, fromAppUpdate.getShowAppUpdateAvailable);
 export const getUpdateInfo = createSelector(appUpdateState, fromAppUpdate.getUpdateInfo);
 export const isForceUpdate = createSelector(appUpdateState, fromAppUpdate.isForceUpdate);
+export const isUpdateRequested = createSelector(appUpdateState, fromAppUpdate.isUpdateRequested);
+export const isUpdateDownloaded = createSelector(appUpdateState, fromAppUpdate.isUpdateDownloaded);
 
 export const appUpdateSettingsState = (state: AppState) => state.autoUpdateSettings;
 
@@ -299,6 +318,44 @@ export const getHalvesInfo = createSelector(deviceState, fromDevice.halvesInfo);
 export const isUserConfigSaving = createSelector(deviceState, fromDevice.isUserConfigSaving);
 export const deviceUiState = createSelector(deviceState, fromDevice.deviceUiState);
 export const getConnectedDevice = createSelector(deviceState, fromDevice.getConnectedDevice);
+export const getActiveKeymapIndex = createSelector(
+    deviceState,
+    getHardwareModules,
+    (state, hardwareModules): number | undefined => {
+        if (!isDeviceProtocolSupportActiveKeymapIndex(hardwareModules.rightModuleInfo?.deviceProtocolVersion)) {
+            return undefined;
+        }
+
+        return fromDevice.getActiveKeymapIndex(state);
+    }
+);
+export const inactiveKeymapTooltip = createSelector(
+    runningInElectron,
+    getUserConfiguration,
+    getSelectedKeymap,
+    getActiveKeymapIndex,
+    (electron, userConfiguration, selectedKeymap, activeKeymapIndex): string => {
+        if (!electron || activeKeymapIndex === undefined || !selectedKeymap) {
+            return '';
+        }
+
+        const selectedKeymapIndex = userConfiguration.keymaps
+            .findIndex(keymap => keymap.abbreviation === selectedKeymap.abbreviation);
+
+        if (selectedKeymapIndex === -1 || selectedKeymapIndex === activeKeymapIndex) {
+            return '';
+        }
+
+        const activeKeymapName = userConfiguration.keymaps[activeKeymapIndex]?.name;
+
+        if (!activeKeymapName) {
+            return '';
+        }
+
+        return `This keymap is not currently active on the keyboard. ` +
+            `The sidebar dot marks the active keymap, which is currently ${activeKeymapName}.`;
+    }
+);
 export const getSkipFirmwareUpgrade = createSelector(deviceState, fromDevice.getSkipFirmwareUpgrade);
 export const isKeyboardLayoutChanging = createSelector(deviceState, fromDevice.isKeyboardLayoutChanging);
 export const keyboardHalvesAlwaysJoined = createSelector(deviceState, fromDevice.keyboardHalvesAlwaysJoined);
@@ -411,6 +468,16 @@ export const getOutOfSpaceWaringData = createSelector(getConfigSizesState, getOu
         show: configSizeState.allUsage > configSizeState.capacity
     }));
 export const saveToKeyboardStateSelector = createSelector(deviceState, fromDevice.getSaveToKeyboardState);
+export const getAppUpdateNotificationViewModel = createSelector(
+    appUpdateState,
+    saveToKeyboardStateSelector,
+    (appUpdate, saveToKeyboard): AppUpdateNotificationViewModel => ({
+        updateDownloaded: appUpdate.updateDownloaded,
+        isDownloading: fromAppUpdate.isUpdateDownloading(appUpdate),
+        downloadProgressPercent: appUpdate.downloadProgressPercent,
+        hasUnsavedChanges: saveToKeyboard.showButton,
+    })
+);
 export const saveToKeyboardState = createSelector(runningInElectron, saveToKeyboardStateSelector, getOutOfSpaceWaringData,
     (electron, saveToKeyboard, outOfSpaceWarning) => {
         if (!electron) {
@@ -521,6 +588,7 @@ export const getDonglePairingState = createSelector(
                 operation: dongleState.operation,
                 state: DonglePairingStates.Idle,
                 showDonglePairingPanel: false,
+                isBondBroken: false,
             };
         }
 
@@ -530,13 +598,33 @@ export const getDonglePairingState = createSelector(
             });
 
         const isBleAddressMismatches = dongleState.dongle?.bleAddress && (!devicePairedWithDongle || !dongleState.dongle.isPairedWithKeyboard);
+        // a bond that only one of the devices knows about is broken too
+        const isBondOneSided = !!dongleState.dongle?.bleAddress && !!devicePairedWithDongle !== !!dongleState.dongle.isPairedWithKeyboard;
+        const isBondBroken = !!dongleState.dongle?.isBondBroken || isBondOneSided;
 
         return {
             operation: dongleState.operation,
             state: dongleState.state === DonglePairingStates.DeletingSuccess
                 ? DonglePairingStates.Idle
                 : dongleState.state,
-            showDonglePairingPanel: deviceConfigLoaded && (isDongleBleMissingFromHostConnections || isBleAddressMismatches || dongleState.operation === DongleOperations.Pairing),
+            showDonglePairingPanel: deviceConfigLoaded
+                && (isDongleBleMissingFromHostConnections || isBleAddressMismatches || isBondBroken || dongleState.operation === DongleOperations.Pairing),
+            isBondBroken,
+        };
+    }
+);
+
+export const isHalvesBondBroken = createSelector(deviceState, fromDevice.isHalvesBondBroken);
+export const getHalvesPairingState = createSelector(
+    runningInElectron,
+    getConnectedDevice,
+    isHalvesBondBroken,
+    isLeftHalfPairing,
+    isCheckingHalvesBond,
+    (isRunningInElectron, connectedDevice, halvesBondBroken, leftHalfPairing, checkingHalvesBond): HalvesPairingState => {
+        return {
+            showHalvesPairingPanel: isRunningInElectron && connectedDevice?.id === UHK_80_DEVICE.id && halvesBondBroken,
+            isPairing: leftHalfPairing || checkingHalvesBond,
         };
     }
 );
@@ -559,12 +647,15 @@ export const getSideMenuPageState = createSelector(
     getRestoreUserConfiguration,
     calculateDeviceUiState,
     getConnectedDevice,
+    getActiveKeymapIndex,
     getIsAdvancedSettingsMenuVisible,
     getSelectedLayerOption,
     getDonglePairingState,
     isLeftHalfPairing,
     getRouterState,
     getSelectedKeymap,
+    getSelectedMacro,
+    getMacroGroupingSettings,
     (
         runningInElectronValue: boolean,
         updatingFirmwareValue: boolean,
@@ -572,14 +663,18 @@ export const getSideMenuPageState = createSelector(
         restoreUserConfiguration: boolean,
         uiState,
         connectedDevice,
+        activeKeymapIndex,
         isAdvancedSettingsMenuVisible,
         selectedLayerOption,
         donglePairingState,
         leftHalfPairing,
         routerState,
-        selectedKeymap
+        selectedKeymap,
+        selectedMacro,
+        macroGroupingSettings
     ): SideMenuPageState => {
         const macros = getMacroMenuItems(userConfiguration);
+        const macroTree = groupMacrosByName(macros, macroGroupingSettings);
 
         return {
             advancedSettingsMenuVisible: isAdvancedSettingsMenuVisible,
@@ -587,15 +682,18 @@ export const getSideMenuPageState = createSelector(
             runInElectron: runningInElectronValue,
             updatingFirmware: updatingFirmwareValue || donglePairingState.operation !== DongleOperations.None || leftHalfPairing,
             deviceName: userConfiguration.deviceName,
+            activeKeymapIndex: runningInElectronValue ? activeKeymapIndex : undefined,
             keymaps: userConfiguration.keymaps,
             keymapQueryParams: {
                 layer: selectedLayerOption.id
             },
+            macroTree,
             macros,
-            maxMacroCountReached: macros.length >= Constants.MAX_ALLOWED_MACROS,
+            maxMacroCountReached: macros.length >= MAX_ALLOWED_MACROS,
             restoreUserConfiguration,
             deviceUiState: runningInElectronValue ? uiState : DeviceUiStates.UserConfigLoaded,
             selectedKeymap: routerState?.state?.url?.startsWith('/keymap') ? selectedKeymap : undefined,
+            selectedMacro,
         };
     }
 );
@@ -603,21 +701,21 @@ export const getSideMenuPageState = createSelector(
 export const maxMacroCountReached = createSelector(getSideMenuPageState, sideMenuState => sideMenuState.maxMacroCountReached);
 
 export const macroPlaybackSupported = createSelector(getHardwareModules, (hardwareModules: HardwareModules): boolean => {
-    return isVersionGte(hardwareModules.rightModuleInfo.firmwareVersion, '8.4.3');
+    return isVersionGteV1CanUndefined(hardwareModules.rightModuleInfo.firmwareVersion, '8.4.3');
 });
 export const layerDoubleTapSupported = createSelector(
     getHardwareModules,
     (hardwareModules: HardwareModules): boolean => {
-        return isVersionGte(hardwareModules.rightModuleInfo.firmwareVersion, '8.4.3');
+        return isVersionGteV1CanUndefined(hardwareModules.rightModuleInfo.firmwareVersion, '8.4.3');
     }
 );
 
 export const extraLEDCharactersSupported = createSelector(getHardwareModules, (hardwareModules: HardwareModules): boolean => {
-    return isVersionGte(hardwareModules.rightModuleInfo.userConfigVersion, '4.2.0');
+    return isVersionGteV1CanUndefined(hardwareModules.rightModuleInfo.userConfigVersion, '4.2.0');
 });
 
 export const isMacroCommandSupported = createSelector(getHardwareModules, (hardwareModules: HardwareModules): boolean => {
-    return isVersionGte(hardwareModules.rightModuleInfo.userConfigVersion, '5.0.0');
+    return isVersionGteV1CanUndefined(hardwareModules.rightModuleInfo.userConfigVersion, '5.0.0');
 });
 
 export const getShowFirmwareUpgradePanel = createSelector(
@@ -626,7 +724,7 @@ export const getShowFirmwareUpgradePanel = createSelector(
         return inElectron
             && skipFirmwareUpgrade
             && hardwareModules.rightModuleInfo.userConfigVersion
-            && gt(VERSIONS.userConfigVersion, hardwareModules.rightModuleInfo.userConfigVersion);
+            && isVersionGt(VERSIONS.userConfigVersion, hardwareModules.rightModuleInfo.userConfigVersion);
     });
 
 export const getUserConfigHistoryState = (state: AppState) => state.userConfigurationHistory;
@@ -717,14 +815,6 @@ export const getUserConfigHistoryComponentState = createSelector(
         return result;
     });
 
-export const getSupportedThemes = (): AppThemeSelect[] => {
-    return [
-        { id: AppTheme.System, text: 'Follow operating system theme' },
-        { id: AppTheme.Light, text: 'Light' },
-        { id: AppTheme.Dark, text: 'Dark' }
-    ];
-};
-
 export const getStateFirmwareUpgradeState = createSelector(firmwareState, fromFirmware.firmwareUpgradeState);
 export const getFirmwareUpgradeState = createSelector(runningInElectron, getStateFirmwareUpgradeState,
     (electron, firmwareUpgrade): FirmwareUpgradeState => {
@@ -770,12 +860,12 @@ export const upgradeAgentTooltip = createSelector(
             return '';
         }
 
-        return `rightHalf.firmware.userConfigVersion ${hardwareModules.rightModuleInfo.userConfigVersion} minor version is larger than agent.userConfigVersion ${VERSIONS.userConfigVersion}. <br /> <br /> rightHalf.flashedUserConfigVersion: ${newUserConfiguration.newUserConfigurationVersion}`;
+        return `rightHalf.firmware.userConfigVersion ${escapeHtml(hardwareModules.rightModuleInfo.userConfigVersion)} minor version is larger than agent.userConfigVersion ${VERSIONS.userConfigVersion}. <br /> <br /> rightHalf.flashedUserConfigVersion: ${escapeHtml(newUserConfiguration.newUserConfigurationVersion)}`;
     });
 export const upgradeFirmwareTooltip = createSelector(
     getHardwareModules,
     (hardwareModules:HardwareModules) => {
-        return `rightModule.userConfigVersion ${hardwareModules.rightModuleInfo.userConfigVersion} patch version is less than agent.userConfigVersion ${VERSIONS.userConfigVersion}`;
+        return `firmware rightHalf.userConfigVersion ${hardwareModules.rightModuleInfo.userConfigVersion} patch version is less than agent.userConfigVersion ${VERSIONS.userConfigVersion}`;
     });
 export const defaultUserConfigState = (state: AppState) => state.defaultUserConfiguration;
 export const getDefaultUserConfiguration = createSelector(
@@ -827,11 +917,19 @@ export const getApplicationSettings = createSelector(
     getSmartMacroPanelWidth,
     backlightingColorPalette,
     keyboardHalvesAlwaysJoined,
+    getAlwaysEnableAdvancedMode,
+    getMacroGroupingSettings,
+    getSharedConfigurationFilePath,
+    getDetectSharedConfigurationChanges,
     (updateSettingsState,
         app,
         smartMacroPanelWidth,
         backlightingColorPalette,
         keyboardHalvesAlwaysJoined,
+        alwaysEnableAdvancedMode,
+        macroGrouping,
+        sharedConfigurationFilePath,
+        detectSharedConfigurationChanges,
     ): ApplicationSettings => {
         return {
             errorPanelHeight: app.errorPanelHeight,
@@ -839,8 +937,14 @@ export const getApplicationSettings = createSelector(
             everAttemptedSavingToKeyboard: app.everAttemptedSavingToKeyboard,
             animationEnabled: app.animationEnabled,
             appTheme: app.appTheme,
+            keyLanguage: app.keyLanguage,
             backlightingColorPalette,
             keyboardHalvesAlwaysJoined,
-            smartMacroPanelWidth
+            minimizeToTray: app.minimizeToTray,
+            alwaysEnableAdvancedMode,
+            macroGrouping,
+            smartMacroPanelWidth,
+            sharedConfigurationFilePath,
+            detectSharedConfigurationChanges
         };
     });

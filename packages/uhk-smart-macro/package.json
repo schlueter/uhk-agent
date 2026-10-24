@@ -14,14 +14,11 @@
   "scripts": {
     "build": "tsc --project src/tsconfig.build.json",
     "clean": "rimraf ./node_modules ./dist",
-    "test:skip": "cross-env NODE_OPTIONS=--loader=ts-node/esm jasmine --config=jasmine.json",
-    "coverage": "nyc npm test",
+    "test:skip": "node --loader=ts-node/esm --test --test-concurrency=1 \"**/*.test.ts\"",
     "lint": "eslint"
   },
   "dependencies": {
-    "@octokit/rest": "22.0.0",
-    "fs-extra": "11.3.1",
-    "got": "14.4.8",
+    "@octokit/rest": "22.0.1",
     "url-join": "5.0.0"
   }
 }

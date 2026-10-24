@@ -6,8 +6,7 @@ import {
     Component,
     EventEmitter,
     forwardRef,
-    HostListener,
-    Inject,
+    inject,
     Input,
     OnChanges,
     OnDestroy,
@@ -27,11 +26,11 @@ import { LogService } from 'uhk-common';
 import { SelectedMacroActionId } from '../../../../../models';
 import { MONACO_EDITOR_UHK_MACRO_LANGUAGE_ID } from '../../../../../services/monaco-editor-uhk-setup.service';
 import { SmartMacroDocCommandAction, SmartMacroDocService } from '../../../../../services/smart-macro-doc-service';
-import { hasNonAsciiCharacters, NON_ASCII_REGEXP } from '../../../../../util';
 
 const MACRO_CHANGE_DEBOUNCE_TIME = 250;
 
 function getVsCodeTheme(): string {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (window as any).getUhkTheme() === 'dark' ? 'uhk-dark' : 'uhk-light';
 }
 
@@ -89,6 +88,8 @@ export class MacroCommandEditorComponent implements AfterViewInit, ControlValueA
     containerHeight = '54px';
 
     private actionIndexQueryParam: string | undefined;
+    private readonly cdRef = inject(ChangeDetectorRef);
+    private readonly document = inject<Document>(DOCUMENT);
     private columnNr = 1;
     private lineHeight = 18;
     private lineNr = 1;
@@ -96,14 +97,13 @@ export class MacroCommandEditorComponent implements AfterViewInit, ControlValueA
     private insertingMacro = false;
     private changeObserver$: Observer<string>;
     private cursorPositionChange$: Observer<Position>;
+    private readonly logService = inject(LogService);
+    private readonly route = inject(ActivatedRoute);
+    private readonly router = inject(Router);
+    private readonly smartMacroDocService = inject(SmartMacroDocService);
     private subscriptions = new Subscription();
 
-    constructor(private cdRef: ChangeDetectorRef,
-                @Inject(DOCUMENT) private document: Document,
-                private logService: LogService,
-                private smartMacroDocService: SmartMacroDocService,
-                private route: ActivatedRoute,
-                private router: Router) {
+    constructor() {
         // https://stackoverflow.com/questions/58271107/offset-between-text-and-cursor-with-the-monaco-editor-angular-under-chrome-m
         this.document.fonts.ready.then(() => {
             if (this.editor) {
@@ -183,17 +183,8 @@ export class MacroCommandEditorComponent implements AfterViewInit, ControlValueA
         this.subscriptions.unsubscribe();
     }
 
-    private onChanged = (_: any) => {};
-    private onTouched = () => {};
-
-    @HostListener('paste', [])
-    onPaste(): void {
-        if (!this.editor) {
-            return;
-        }
-
-        this.removeNonAsciiCharachters();
-    }
+    private onChanged: Function = () => {};
+    private onTouched: Function = () => {};
 
     onEditorInit(editor: MonacoStandaloneCodeEditor) {
         this.logService.misc('[MacroCommandEditorComponent] editor initialized.');
@@ -211,11 +202,6 @@ export class MacroCommandEditorComponent implements AfterViewInit, ControlValueA
                 this.ctrlEnterKeyDown.emit();
 
                 return;
-            }
-
-            if (hasNonAsciiCharacters(event.browserEvent.key)) {
-                event.preventDefault();
-                event.stopPropagation();
             }
         });
 
@@ -279,11 +265,6 @@ export class MacroCommandEditorComponent implements AfterViewInit, ControlValueA
             return;
         }
 
-        if (hasNonAsciiCharacters(value)) {
-            this.removeNonAsciiCharachters();
-            return;
-        }
-
         this.insertingMacro = false;
         this.value = value;
         this.calculateHeight();
@@ -295,7 +276,7 @@ export class MacroCommandEditorComponent implements AfterViewInit, ControlValueA
             }).pipe(
                 debounceTime(MACRO_CHANGE_DEBOUNCE_TIME),
                 distinctUntilChanged()
-            ).subscribe(data => {
+            ).subscribe((data: string) => {
                 // If the user modify the macro without saving then we update the macro text
                 if (this.isFocused) {
                     this.smartMacroDocService.updateCommand(data);
@@ -306,11 +287,11 @@ export class MacroCommandEditorComponent implements AfterViewInit, ControlValueA
         this.changeObserver$.next(value);
     }
 
-    registerOnChange(fn: any): void {
+    registerOnChange(fn: Function): void {
         this.onChanged = fn;
     }
 
-    registerOnTouched(fn: any): void {
+    registerOnTouched(fn: Function): void {
         this.onTouched = fn;
     }
 
@@ -374,7 +355,7 @@ export class MacroCommandEditorComponent implements AfterViewInit, ControlValueA
         data = data?.trim();
 
         let selection = this.editor.getSelection();
-        let cursorPosition;
+        let cursorPosition: monaco.IPosition;
         if (selection.isEmpty()) {
             const macroLines = this.editor.getValue().split(this.editor.getModel().getEOL());
             const lineNumber = selection.getPosition().lineNumber;
@@ -405,13 +386,6 @@ export class MacroCommandEditorComponent implements AfterViewInit, ControlValueA
         if (cursorPosition) {
             this.editor.setPosition(cursorPosition);
         }
-    }
-
-    private removeNonAsciiCharachters() {
-        const cursorPosition = this.editor.getPosition();
-        const value = this.editor.getValue().replace(NON_ASCII_REGEXP, '');
-        this.editor.setValue(value);
-        this.editor.setPosition(cursorPosition);
     }
 
     private setMacroCommand(data: string): void {

@@ -1,6 +1,6 @@
 import { Device, devicesAsync } from 'node-hid';
-import fse from 'fs-extra';
-import { EOL } from 'os';
+import fs from 'node:fs/promises';
+import { EOL } from 'node:os';
 import MemoryMap from 'nrf-intel-hex';
 import { Buffer, LogService, UHK_DEVICES, UhkDeviceProduct, VidPidPair } from 'uhk-common';
 
@@ -58,7 +58,7 @@ export function bufferToString(buffer: Array<number> | Buffer | globalThis.Buffe
     return str;
 }
 
-export async function retry(command: Function, maxTry = 3, logService?: LogService): Promise<any> {
+export async function retry(command: Function, maxTry = 3, logService?: LogService): Promise<void> {
     let retryCount = 0;
 
     while (true) {
@@ -111,7 +111,7 @@ export const isBootloader = (dev: Device): boolean => {
 };
 
 export const getFileContentAsync = async (filePath: string): Promise<Array<string>> => {
-    const fileContent = await fse.readFile(filePath, {encoding: 'utf-8'});
+    const fileContent = await fs.readFile(filePath, {encoding: 'utf-8'});
 
     return fileContent
         .split(EOL)
@@ -119,8 +119,8 @@ export const getFileContentAsync = async (filePath: string): Promise<Array<strin
         .filter(x => !x.startsWith('#') && x.length > 0);
 };
 
-export const readBootloaderFirmwareFromHexFileAsync = async (hexFilePath: string): Promise<Map<any, any>> => {
-    const fileContent = await fse.readFile(hexFilePath, { encoding: 'utf8' });
+export const readBootloaderFirmwareFromHexFileAsync = async (hexFilePath: string): Promise<MemoryMap> => {
+    const fileContent = await fs.readFile(hexFilePath, { encoding: 'utf8' });
 
     const memoryMap = MemoryMap.fromHex(fileContent);
 

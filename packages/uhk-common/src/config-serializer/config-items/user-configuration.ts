@@ -1,6 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { DEFAULT_DEVICE_NAME } from '../../util/constants.js';
 import { assertEnum, assertFloat, assertInt16, assertUInt16, assertUInt32, assertUInt8 } from '../assert.js';
-import { ConfigSerializer } from '../config-serializer.js';
+import { resolveSwitchKeymapActions } from '../resolve-switch-keymap-actions.js';
 import { UhkBuffer } from '../uhk-buffer.js';
+import { AdvancedSecondaryRoleConfiguration } from './advanced-secondary-role-configuration.js';
 import { BacklightingMode } from './backlighting-mode.js';
 import { BatteryChargingMode } from './battery-charging-mode.js';
 import {
@@ -23,16 +26,22 @@ import { RgbColor } from './rgb-color.js';
 import { isAllowedScancode } from './scancode-checker.js';
 import { SecondaryRoleAction } from './secondary-role-action.js';
 import { SecondaryRoleAdvancedStrategyTimeoutAction } from './secondary-role-advanced-strategy-timeout-action.js';
+import { SecondaryRoleAdvancedStrategyTimeoutType } from './secondary-role-advanced-strategy-timeout-type.js';
+import { SecondaryRoleAdvancedStrategyTriggeringEvent } from './secondary-role-advanced-strategy-triggering-event.js';
 import { SecondaryRoleStrategy } from './secondary-role-strategy.js';
 import { isSerialisationInfoGte, SerialisationInfo } from './serialisation-info.js';
 
-export class UserConfiguration implements MouseSpeedConfiguration {
+export class UserConfiguration implements AdvancedSecondaryRoleConfiguration, MouseSpeedConfiguration {
 
     @assertUInt16 userConfigMajorVersion: number;
 
     @assertUInt16 userConfigMinorVersion: number;
 
     @assertUInt16 userConfigPatchVersion: number;
+
+    lastSaveAgentTag : string;
+
+    lastSaveFirmwareTag : string;
 
     @assertUInt32 userConfigurationLength: number;
 
@@ -127,17 +136,36 @@ export class UserConfiguration implements MouseSpeedConfiguration {
 
     @assertEnum(SecondaryRoleStrategy) secondaryRoleStrategy: SecondaryRoleStrategy;
 
+    /**
+     * Deprecated in version 14.
+     * Functionality consolidated with `doubletapTimeout`
+     */
     @assertUInt16 secondaryRoleAdvancedStrategyDoubletapTimeout: number;
 
     @assertUInt16 secondaryRoleAdvancedStrategyTimeout: number;
 
     @assertInt16 secondaryRoleAdvancedStrategySafetyMargin: number;
 
+    /**
+     * Deprecated in version 14.
+     * Use
+     * - `secondaryRoleAdvancedStrategyTrigger`
+     */
     secondaryRoleAdvancedStrategyTriggerByRelease: boolean;
+
+    @assertEnum(SecondaryRoleAdvancedStrategyTriggeringEvent) secondaryRoleAdvancedStrategyTrigger: SecondaryRoleAdvancedStrategyTriggeringEvent;
 
     secondaryRoleAdvancedStrategyDoubletapToPrimary: boolean;
 
     @assertEnum(SecondaryRoleAdvancedStrategyTimeoutAction) secondaryRoleAdvancedStrategyTimeoutAction: SecondaryRoleAdvancedStrategyTimeoutAction;
+
+    secondaryRoleAdvancedStrategyTriggerByMouse: boolean;
+
+    secondaryRoleAdvancedStrategyTriggerFromSameHalf: boolean;
+
+    @assertUInt8 secondaryRoleAdvancedStrategyMinimumHoldTime: number;
+
+    @assertEnum(SecondaryRoleAdvancedStrategyTimeoutType) secondaryRoleAdvancedStrategyTimeoutType: SecondaryRoleAdvancedStrategyTimeoutType;
 
     @assertFloat mouseScrollAxisSkew: number;
 
@@ -148,6 +176,10 @@ export class UserConfiguration implements MouseSpeedConfiguration {
     @assertUInt16 doubletapTimeout: number;
 
     @assertUInt16 keystrokeDelay: number;
+
+    bluetoothAlwaysAdvertise: boolean;
+
+    bluetoothKeepConnectionsAlive: boolean;
 
     hostConnections: HostConnection[] = [];
 
@@ -200,6 +232,9 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromJsonObjectV9(jsonObject);
                 break;
 
@@ -221,6 +256,10 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.migrateToV9_99();
         this.migrateToV11();
         this.migrateToV12();
+        this.migrateToV12_1();
+        this.migrateToV13();
+        this.migrateToV14();
+        this.migrateToV15();
 
         this.recalculateConfigurationLength();
 
@@ -256,6 +295,9 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromBinaryV9(buffer);
                 break;
 
@@ -316,6 +358,22 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             this.userConfigurationLength = 0;
         }
 
+        if (this.migrateToV12_1()) {
+            this.userConfigurationLength = 0;
+        }
+
+        if (this.migrateToV13()) {
+            this.userConfigurationLength = 0;
+        }
+
+        if (this.migrateToV14()) {
+            this.userConfigurationLength = 0;
+        }
+
+        if (this.migrateToV15()) {
+            this.userConfigurationLength = 0;
+        }
+
         if (this.userConfigurationLength === 0) {
             this.recalculateConfigurationLength();
         }
@@ -328,6 +386,8 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             userConfigMajorVersion: this.userConfigMajorVersion,
             userConfigMinorVersion: this.userConfigMinorVersion,
             userConfigPatchVersion: this.userConfigPatchVersion,
+            lastSaveAgentTag: this.lastSaveAgentTag,
+            lastSaveFirmwareTag: this.lastSaveFirmwareTag,
             deviceName: this.deviceName,
             doubleTapSwitchLayerTimeout: this.doubleTapSwitchLayerTimeout,
             perKeyRgbPresent: this.perKeyRgbPresent,
@@ -355,9 +415,13 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             secondaryRoleAdvancedStrategyDoubletapTimeout: this.secondaryRoleAdvancedStrategyDoubletapTimeout,
             secondaryRoleAdvancedStrategyTimeout: this.secondaryRoleAdvancedStrategyTimeout,
             secondaryRoleAdvancedStrategySafetyMargin: this.secondaryRoleAdvancedStrategySafetyMargin,
-            secondaryRoleAdvancedStrategyTriggerByRelease: this.secondaryRoleAdvancedStrategyTriggerByRelease,
+            secondaryRoleAdvancedStrategyTrigger: SecondaryRoleAdvancedStrategyTriggeringEvent[this.secondaryRoleAdvancedStrategyTrigger],
             secondaryRoleAdvancedStrategyDoubletapToPrimary: this.secondaryRoleAdvancedStrategyDoubletapToPrimary,
             secondaryRoleAdvancedStrategyTimeoutAction: SecondaryRoleAdvancedStrategyTimeoutAction[this.secondaryRoleAdvancedStrategyTimeoutAction],
+            secondaryRoleAdvancedStrategyTriggerByMouse: this.secondaryRoleAdvancedStrategyTriggerByMouse,
+            secondaryRoleAdvancedStrategyTriggerFromSameHalf: this.secondaryRoleAdvancedStrategyTriggerFromSameHalf,
+            secondaryRoleAdvancedStrategyMinimumHoldTime: this.secondaryRoleAdvancedStrategyMinimumHoldTime,
+            secondaryRoleAdvancedStrategyTimeoutType: SecondaryRoleAdvancedStrategyTimeoutType[this.secondaryRoleAdvancedStrategyTimeoutType],
             mouseScrollAxisSkew: this.mouseScrollAxisSkew,
             mouseMoveAxisSkew: this.mouseMoveAxisSkew,
             diagonalSpeedCompensation: this.diagonalSpeedCompensation,
@@ -375,6 +439,9 @@ export class UserConfiguration implements MouseSpeedConfiguration {
 
             keyBacklightBrightnessChargingDefault: this.keyBacklightBrightnessChargingDefault,
             batteryChargingMode: BatteryChargingMode[this.batteryChargingMode],
+
+            bluetoothAlwaysAdvertise: this.bluetoothAlwaysAdvertise,
+            bluetoothKeepConnectionsAlive: this.bluetoothKeepConnectionsAlive,
 
             hostConnections: this.hostConnections.map(hostConnection => hostConnection.toJsonObject()),
             moduleConfigurations: this.moduleConfigurations.map(moduleConfiguration => moduleConfiguration.toJsonObject()),
@@ -416,7 +483,7 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         buffer.writeUInt16(this.secondaryRoleAdvancedStrategyDoubletapTimeout);
         buffer.writeUInt16(this.secondaryRoleAdvancedStrategyTimeout);
         buffer.writeInt16(this.secondaryRoleAdvancedStrategySafetyMargin);
-        buffer.writeBoolean(this.secondaryRoleAdvancedStrategyTriggerByRelease);
+        buffer.writeUInt8(this.secondaryRoleAdvancedStrategyTrigger);
         buffer.writeBoolean(this.secondaryRoleAdvancedStrategyDoubletapToPrimary);
         buffer.writeUInt8(this.secondaryRoleAdvancedStrategyTimeoutAction);
         buffer.writeFloat(this.mouseScrollAxisSkew);
@@ -436,6 +503,12 @@ export class UserConfiguration implements MouseSpeedConfiguration {
 
         buffer.writeUInt8(this.keyBacklightBrightnessChargingDefault);
         buffer.writeUInt8(this.batteryChargingMode);
+        buffer.writeBoolean(this.secondaryRoleAdvancedStrategyTriggerByMouse);
+        buffer.writeBoolean(this.secondaryRoleAdvancedStrategyTriggerFromSameHalf);
+        buffer.writeUInt8(this.secondaryRoleAdvancedStrategyMinimumHoldTime);
+        buffer.writeUInt8(this.secondaryRoleAdvancedStrategyTimeoutType);
+        buffer.writeBoolean(this.bluetoothAlwaysAdvertise);
+        buffer.writeBoolean(this.bluetoothKeepConnectionsAlive);
 
         for(let i = 0; i < HOST_CONNECTION_COUNT_MAX; i++) {
             const hostConnection = this.hostConnections[i];
@@ -446,6 +519,8 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         buffer.writeArray(this.keymaps, (uhkBuffer: UhkBuffer, keymap: Keymap) => {
             keymap.toBinary(uhkBuffer, this.getSerialisationInfo(), this);
         });
+        buffer.writeString(this.lastSaveAgentTag);
+        buffer.writeString(this.lastSaveFirmwareTag);
     }
 
     toString(): string {
@@ -471,9 +546,15 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.userConfigurationLength = buffer.offset;
     }
 
+    setAgentAndFirmwareVersion(agentTag: string, firmwareTag: string): void {
+        this.lastSaveAgentTag = agentTag;
+        this.lastSaveFirmwareTag = firmwareTag;
+        this.recalculateConfigurationLength()
+    }
+
     private setDefaultDeviceName(): void {
         if (!this.deviceName || this.deviceName.trim().length === 0) {
-            this.deviceName = 'My UHK';
+            this.deviceName = DEFAULT_DEVICE_NAME;
         }
     }
 
@@ -535,7 +616,7 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             return macro;
         });
         this.keymaps = buffer.readArray<Keymap>(uhkBuffer => new Keymap().fromBinary(uhkBuffer, this.macros, serialisationInfo));
-        ConfigSerializer.resolveSwitchKeymapActions(this.keymaps);
+        resolveSwitchKeymapActions(this.keymaps);
 
     }
 
@@ -578,7 +659,7 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             return macro;
         });
         this.keymaps = buffer.readArray<Keymap>(uhkBuffer => new Keymap().fromBinary(uhkBuffer, this.macros, serialisationInfo));
-        ConfigSerializer.resolveSwitchKeymapActions(this.keymaps);
+        resolveSwitchKeymapActions(this.keymaps);
 
     }
 
@@ -635,7 +716,7 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             return macro;
         });
         this.keymaps = buffer.readArray<Keymap>(uhkBuffer => new Keymap().fromBinary(uhkBuffer, this.macros, serialisationInfo));
-        ConfigSerializer.resolveSwitchKeymapActions(this.keymaps);
+        resolveSwitchKeymapActions(this.keymaps);
 
     }
 
@@ -707,7 +788,7 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             return macro;
         });
         this.keymaps = buffer.readArray<Keymap>(uhkBuffer => new Keymap().fromBinary(uhkBuffer, this.macros, serialisationInfo));
-        ConfigSerializer.resolveSwitchKeymapActions(this.keymaps);
+        resolveSwitchKeymapActions(this.keymaps);
 
     }
 
@@ -717,6 +798,9 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.setDefaultDeviceName();
         this.doubleTapSwitchLayerTimeout = buffer.readUInt16();
         this.perKeyRgbPresent = buffer.readBoolean();
+
+        const serialisationInfo = this.getSerialisationInfo();
+
         this.backlightingMode = buffer.readUInt8();
         this.backlightingNoneActionColor = new RgbColor().fromBinary(buffer, this.userConfigMajorVersion);
         this.backlightingScancodeColor = new RgbColor().fromBinary(buffer, this.userConfigMajorVersion);
@@ -742,7 +826,14 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.secondaryRoleAdvancedStrategyDoubletapTimeout = buffer.readUInt16();
         this.secondaryRoleAdvancedStrategyTimeout = buffer.readUInt16();
         this.secondaryRoleAdvancedStrategySafetyMargin = buffer.readInt16();
-        this.secondaryRoleAdvancedStrategyTriggerByRelease = buffer.readBoolean();
+
+        if (isSerialisationInfoGte(serialisationInfo, '14.0.0')) {
+            this.secondaryRoleAdvancedStrategyTrigger = buffer.readUInt8();
+        }
+        else {
+            this.secondaryRoleAdvancedStrategyTriggerByRelease = buffer.readBoolean();
+        }
+
         this.secondaryRoleAdvancedStrategyDoubletapToPrimary = buffer.readBoolean();
         this.secondaryRoleAdvancedStrategyTimeoutAction = buffer.readUInt8();
         this.mouseScrollAxisSkew = buffer.readFloat();
@@ -760,11 +851,21 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.keyBacklightFadeOutTimeout = buffer.readUInt16();
         this.keyBacklightFadeOutBatteryTimeout = buffer.readUInt16();
 
-        const serialisationInfo = this.getSerialisationInfo();
-
         if (isSerialisationInfoGte(serialisationInfo, '9.99.0')) {
             this.keyBacklightBrightnessChargingDefault = buffer.readUInt8();
             this.batteryChargingMode = buffer.readUInt8();
+        }
+
+        if (isSerialisationInfoGte(serialisationInfo, '14.0.0')) {
+            this.secondaryRoleAdvancedStrategyTriggerByMouse = buffer.readBoolean();
+            this.secondaryRoleAdvancedStrategyTriggerFromSameHalf = buffer.readBoolean();
+            this.secondaryRoleAdvancedStrategyMinimumHoldTime = buffer.readUInt8();
+            this.secondaryRoleAdvancedStrategyTimeoutType = buffer.readUInt8();
+        }
+
+        if (isSerialisationInfoGte(serialisationInfo, '15.0.0')) {
+            this.bluetoothAlwaysAdvertise = buffer.readBoolean();
+            this.bluetoothKeepConnectionsAlive = buffer.readBoolean();
         }
 
         this.hostConnections = [];
@@ -783,7 +884,13 @@ export class UserConfiguration implements MouseSpeedConfiguration {
             return macro;
         });
         this.keymaps = buffer.readArray<Keymap>(uhkBuffer => new Keymap().fromBinary(uhkBuffer, this.macros, serialisationInfo));
-        ConfigSerializer.resolveSwitchKeymapActions(this.keymaps);
+
+        if (this.userConfigMajorVersion >= 13) {
+            this.lastSaveAgentTag = buffer.readString();
+            this.lastSaveFirmwareTag = buffer.readString();
+        }
+
+        resolveSwitchKeymapActions(this.keymaps);
 
     }
 
@@ -992,6 +1099,9 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.setDefaultDeviceName();
         this.doubleTapSwitchLayerTimeout = jsonObject.doubleTapSwitchLayerTimeout;
         this.perKeyRgbPresent = jsonObject.perKeyRgbPresent;
+
+        const serialisationInfo = this.getSerialisationInfo();
+
         this.backlightingMode = BacklightingMode[jsonObject.backlightingMode as string];
         this.backlightingNoneActionColor = new RgbColor().fromJsonObject(jsonObject.backlightingNoneActionColor, this.userConfigMajorVersion);
         this.backlightingScancodeColor = new RgbColor().fromJsonObject(jsonObject.backlightingScancodeColor, this.userConfigMajorVersion);
@@ -1026,6 +1136,14 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.doubletapTimeout = jsonObject.doubletapTimeout;
         this.keystrokeDelay = jsonObject.keystrokeDelay;
 
+        if (isSerialisationInfoGte(serialisationInfo, '14.0.0')) {
+            this.secondaryRoleAdvancedStrategyTrigger = SecondaryRoleAdvancedStrategyTriggeringEvent[jsonObject.secondaryRoleAdvancedStrategyTrigger as string];
+            this.secondaryRoleAdvancedStrategyTriggerByMouse = jsonObject.secondaryRoleAdvancedStrategyTriggerByMouse;
+            this.secondaryRoleAdvancedStrategyTriggerFromSameHalf = jsonObject.secondaryRoleAdvancedStrategyTriggerFromSameHalf;
+            this.secondaryRoleAdvancedStrategyMinimumHoldTime = jsonObject.secondaryRoleAdvancedStrategyMinimumHoldTime;
+            this.secondaryRoleAdvancedStrategyTimeoutType = SecondaryRoleAdvancedStrategyTimeoutType[jsonObject.secondaryRoleAdvancedStrategyTimeoutType as string];
+        }
+
         this.displayBrightness = jsonObject.displayBrightness;
         this.displayBrightnessBattery = jsonObject.displayBrightnessBattery;
         this.keyBacklightBrightness = jsonObject.keyBacklightBrightness;
@@ -1035,11 +1153,14 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.keyBacklightFadeOutTimeout = jsonObject.keyBacklightFadeOutTimeout;
         this.keyBacklightFadeOutBatteryTimeout = jsonObject.keyBacklightFadeOutBatteryTimeout;
 
-        const serialisationInfo = this.getSerialisationInfo();
-
         if (isSerialisationInfoGte(serialisationInfo, '9.99.0')) {
             this.keyBacklightBrightnessChargingDefault = jsonObject.keyBacklightBrightnessChargingDefault;
             this.batteryChargingMode = BatteryChargingMode[jsonObject.batteryChargingMode as string];
+        }
+
+        if (isSerialisationInfoGte(serialisationInfo, '15.0.0')) {
+            this.bluetoothAlwaysAdvertise = jsonObject.bluetoothAlwaysAdvertise;
+            this.bluetoothKeepConnectionsAlive = jsonObject.bluetoothKeepConnectionsAlive;
         }
 
         this.hostConnections = jsonObject.hostConnections.map((hostConnection: any, index: number) => {
@@ -1060,6 +1181,11 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.keymaps = jsonObject.keymaps.map((keymap: any) => {
             return new Keymap().fromJsonObject(keymap, this.macros, serialisationInfo);
         });
+
+        if (this.userConfigMajorVersion >= 13) {
+            this.lastSaveAgentTag  = jsonObject.lastSaveAgentTag ;
+            this.lastSaveFirmwareTag = jsonObject.lastSaveFirmwareTag;
+        }
     }
 
     private migrateToV5(): boolean {
@@ -1357,6 +1483,74 @@ export class UserConfiguration implements MouseSpeedConfiguration {
         this.userConfigMajorVersion = 12;
         this.userConfigMinorVersion = 0;
         this.userConfigPatchVersion = 0;
+    }
+
+    private migrateToV12_1(): boolean {
+        if (this.userConfigMajorVersion > 12) {
+            return false;
+        }
+
+        if (this.userConfigMinorVersion >= 1) {
+            return false;
+        }
+
+        this.userConfigMinorVersion = 1;
+
+        return true;
+    }
+
+    private migrateToV13(): boolean {
+        if (this.userConfigMajorVersion > 12) {
+            return false;
+        }
+
+        this.userConfigMajorVersion = 13;
+        this.userConfigMinorVersion = 0;
+        this.userConfigPatchVersion = 0;
+        // We don't know it. We will update it before save user config to the keyboard
+        this.lastSaveAgentTag = '';
+        this.lastSaveFirmwareTag = '';
+    }
+
+    private migrateToV14(): boolean {
+        if (this.userConfigMajorVersion > 13) {
+            return false;
+        }
+
+        this.userConfigMajorVersion = 14;
+        this.userConfigMinorVersion = 0;
+        this.userConfigPatchVersion = 0;
+
+        if (this.secondaryRoleAdvancedStrategyTriggerByRelease) {
+            this.secondaryRoleAdvancedStrategyTrigger = SecondaryRoleAdvancedStrategyTriggeringEvent.Release;
+        }
+        else {
+            this.secondaryRoleAdvancedStrategyTrigger = SecondaryRoleAdvancedStrategyTriggeringEvent.Press;
+        }
+        this.secondaryRoleAdvancedStrategyTriggerByMouse = false;
+        this.secondaryRoleAdvancedStrategyTriggerFromSameHalf = true;
+        this.secondaryRoleAdvancedStrategyMinimumHoldTime = 0;
+        this.secondaryRoleAdvancedStrategyTimeoutType = SecondaryRoleAdvancedStrategyTimeoutType.Active;
+
+        return true;
+    }
+
+    private migrateToV15(): boolean {
+        if (this.userConfigMajorVersion > 14) {
+            return false;
+        }
+
+        this.userConfigMajorVersion = 15;
+        this.userConfigMinorVersion = 0;
+        this.userConfigPatchVersion = 0;
+
+        // Pre-v15 firmware always operated in multipoint mode, so upgraded configurations keep it
+        // to avoid changing the behaviour of an existing keyboard. Fresh configurations default to
+        // singlepoint instead, which is set in user-config-80.json rather than here.
+        this.bluetoothAlwaysAdvertise = true;
+        this.bluetoothKeepConnectionsAlive = true;
+
+        return true;
     }
 
     private getSerialisationInfo(): SerialisationInfo {

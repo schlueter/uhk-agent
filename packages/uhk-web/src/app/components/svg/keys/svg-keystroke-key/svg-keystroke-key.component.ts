@@ -1,9 +1,12 @@
-import { Component, Input, OnChanges, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Input, OnChanges, OnDestroy, inject } from '@angular/core';
+import { Store } from '@ngrx/store';
+import { Subscription } from 'rxjs';
 import { KeyModifiers, KeystrokeAction } from 'uhk-common';
 
 import { MapperService } from '../../../../services/mapper.service';
-import { isRectangleAsSecondaryRoleKey } from '../util';
+import { AppState, getKeyLanguage } from '../../../../store';
 import { SECONDARY_ROLE_BOTTOM_MARGIN } from '../../constants';
+import { isRectangleAsSecondaryRoleKey } from '../util';
 
 class SvgAttributes {
     width: number;
@@ -28,7 +31,7 @@ class SvgAttributes {
     styleUrls: ['./svg-keystroke-key.component.scss'],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class SvgKeystrokeKeyComponent implements OnChanges {
+export class SvgKeystrokeKeyComponent implements OnChanges, OnDestroy {
     @Input() height: number;
     @Input() width: number;
     @Input() keystrokeAction: KeystrokeAction;
@@ -43,6 +46,7 @@ export class SvgKeystrokeKeyComponent implements OnChanges {
     option: SvgAttributes;
     command: SvgAttributes;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     labelSource: any;
     labelType: 'empty' | 'one-line' | 'two-line' | 'icon' | 'icon-text' | 'text-icon';
 
@@ -57,7 +61,12 @@ export class SvgKeystrokeKeyComponent implements OnChanges {
     thisSecondaryRoleText: string;
     subComponentSecondaryRoleText: string;
 
-    constructor(private mapper: MapperService) {
+    private readonly cdRef = inject(ChangeDetectorRef);
+    private readonly mapper = inject(MapperService);
+    private readonly store = inject<Store<AppState>>(Store);
+    private readonly subscriptions = new Subscription();
+
+    constructor() {
         this.modifierIconNames = {};
         this.textContainer = new SvgAttributes();
         this.modifierContainer = new SvgAttributes();
@@ -65,10 +74,22 @@ export class SvgKeystrokeKeyComponent implements OnChanges {
         this.control = new SvgAttributes();
         this.option = new SvgAttributes();
         this.command = new SvgAttributes();
+        this.subscriptions.add(
+            this.store.select(getKeyLanguage).subscribe(() => {
+                if (this.keystrokeAction) {
+                    this.calculatePositions();
+                    this.cdRef.markForCheck();
+                }
+            })
+        );
     }
 
     ngOnChanges() {
         this.calculatePositions();
+    }
+
+    ngOnDestroy(): void {
+        this.subscriptions.unsubscribe();
     }
 
     private calculatePositions(): void {
@@ -91,8 +112,7 @@ export class SvgKeystrokeKeyComponent implements OnChanges {
             if (this.labelSource) {
                 this.labelType = 'icon';
             } else {
-                let newLabelSource: string[];
-                newLabelSource = this.mapper.scanCodeToText(scancode, this.keystrokeAction.type);
+                const newLabelSource = this.mapper.scanCodeToText(scancode, this.keystrokeAction.type);
                 if (newLabelSource) {
                     if (this.secondaryText && newLabelSource.length === 2) {
                         if (isRectangleAsSecondaryRole || bottomSideMode) {

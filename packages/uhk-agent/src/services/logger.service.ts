@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as log from 'electron-log/main';
-import { logUserConfigHelper, LogService, LogRegExps, UserConfiguration } from 'uhk-common';
+import { logUserConfigHelper, LogService, LOG_READ_REG_EXP, LOG_WRITE_REG_EXP, UserConfiguration } from 'uhk-common';
 
 /**
  * This service use the electron-log package to write log in file.
@@ -9,7 +9,7 @@ import { logUserConfigHelper, LogService, LogRegExps, UserConfiguration } from '
  * - on Linux: ~/.config/<app name>/uhk-agent.log
  * - on OS X: ~/Library/Logs/<app name>/uhk-agent.log
  * - on Windows: %USERPROFILE%\AppData\Roaming\<app name>\uhk-agent.log
- * The app name: UHK Agent. The up to date value in the scripts/release.js file.
+ * The app name: UHK Agent. The up to date value in the scripts/release.mjs file.
  */
 log.initialize({})
 log.transports.console.level = 'silly';
@@ -29,26 +29,31 @@ export class ElectronLogService extends LogService {
         logUserConfigHelper(this.log, message, config);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     error(...args: any[]): void {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         log.error(...args);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     misc(...args: any[]): void {
         if (!this._options.misc) {
             return;
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this.log(...args);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     usb(...args: any[]): void {
         if (!this._options.usb) {
             return;
         }
 
-        if (LogRegExps.writeRegExp.test(args[0])) {
+        if (LOG_WRITE_REG_EXP.test(args[0] as string)) {
             this.log('%c' + args.join(' '), 'color:blue');
-        } else if (LogRegExps.readRegExp.test(args[0])) {
+        } else if (LOG_READ_REG_EXP.test(args[0] as string)) {
             let errorCodeStartIndex = 0;
             let errorCodeEndIndex = 2;
 
@@ -63,6 +68,7 @@ export class ElectronLogService extends LogService {
                 this.log('%c' + args.join(' '), 'color:red');
             }
         } else {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this.log(...args);
         }
     }
@@ -75,7 +81,9 @@ export class ElectronLogService extends LogService {
         this.log('%c' + args.join(' '), 'color:orange');
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     protected log(...args: any[]): void {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         log.log(...args);
     }
 }

@@ -4,19 +4,20 @@ import { ConnectionsAction } from './connections-action.js';
 import { Macro } from '../macro.js';
 import { SerialisationInfo } from '../serialisation-info.js';
 import { KeyAction, KeyActionId, keyActionType } from './key-action.js';
-import { KeystrokeAction } from './keystroke-action.js';
+import { KeyLabelAction } from './key-label-action.js';
+import { JsonObjectKeystrokeAction, KeystrokeAction } from './keystroke-action.js';
 import { NoneBlockAction } from './none-block-action.js';
 import { OtherAction } from './other-action.js';
 import { SwitchLayerAction } from './switch-layer-action.js';
 import { SwitchKeymapAction, UnresolvedSwitchKeymapAction } from './switch-keymap-action.js';
 import { MouseAction } from './mouse-action.js';
-import { PlayMacroAction } from './play-macro-action.js';
+import { MacroArgumentAction, PlayMacroAction } from './play-macro-action.js';
 import { NoneAction } from './none-action.js';
 import { isAllowedScancode } from '../scancode-checker.js';
 
 export class Helper {
 
-    static createKeyAction(source: KeyAction | UhkBuffer | any, macros: Macro[], serialisationInfo: SerialisationInfo): KeyAction {
+    static createKeyAction(source: KeyAction | UhkBuffer, macros: Macro[], serialisationInfo: SerialisationInfo): KeyAction {
         if (source instanceof KeyAction) {
             return Helper.fromKeyAction(source);
         } else if (source instanceof UhkBuffer) {
@@ -39,6 +40,9 @@ export class Helper {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 return this.fromUhkBufferV1(buffer, macros, serialisationInfo);
 
             default:
@@ -62,6 +66,10 @@ export class Helper {
         switch (keyActionFirstByte) {
             case KeyActionId.ConnectionsAction:
                 return new ConnectionsAction().fromBinary(buffer, serialisationInfo);
+            case KeyActionId.KeyLabelAction:
+                return new KeyLabelAction().fromBinary(buffer);
+            case KeyActionId.MacroArgumentAction:
+                return new MacroArgumentAction().fromBinary(buffer);
             case KeyActionId.NoneAction:
                 return new NoneAction().fromBinary(buffer, serialisationInfo);
             case KeyActionId.SwitchLayerAction:
@@ -77,7 +85,7 @@ export class Helper {
             case KeyActionId.PlayMacroAction:
                 return new PlayMacroAction().fromBinary(buffer, serialisationInfo, macros);
             default:
-                throw `Invalid KeyAction first byte: ${keyActionFirstByte}`;
+                throw new Error(`Invalid KeyAction first byte: ${keyActionFirstByte}`);
         }
     }
 
@@ -85,8 +93,12 @@ export class Helper {
         let newKeyAction: KeyAction;
         if (keyAction instanceof ConnectionsAction) {
             newKeyAction = new ConnectionsAction(keyAction);
+        } else if (keyAction instanceof KeyLabelAction) {
+            newKeyAction = new KeyLabelAction(keyAction);
         } else if (keyAction instanceof KeystrokeAction) {
             newKeyAction = new KeystrokeAction(keyAction);
+        } else if (keyAction instanceof MacroArgumentAction) {
+            newKeyAction = new MacroArgumentAction(keyAction);
         } else if (keyAction instanceof SwitchLayerAction) {
             newKeyAction = new SwitchLayerAction(keyAction);
         } else if (keyAction instanceof SwitchKeymapAction) {
@@ -106,6 +118,7 @@ export class Helper {
         return newKeyAction;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     static fromJSONObject(keyAction: any, macros: Macro[], serialisationInfo: SerialisationInfo): KeyAction {
         switch (serialisationInfo.userConfigMajorVersion) {
             case 1:
@@ -119,6 +132,9 @@ export class Helper {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 return this.fromJSONObjectV1(keyAction, macros, serialisationInfo);
 
             default:
@@ -126,6 +142,7 @@ export class Helper {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private static fromJSONObjectV1(keyAction: any, macros: Macro[], serialisationInfo: SerialisationInfo): KeyAction {
         if (!keyAction) {
             return new NoneAction();
@@ -134,14 +151,18 @@ export class Helper {
         switch (keyAction.keyActionType) {
             case keyActionType.ConnectionsAction:
                 return new ConnectionsAction().fromJsonObject(keyAction, serialisationInfo);
+            case keyActionType.KeyLabelAction:
+                return new KeyLabelAction().fromJsonObject(keyAction)
             case keyActionType.KeystrokeAction: {
-                const keystrokeAction = new KeystrokeAction().fromJsonObject(keyAction, serialisationInfo);
+                const keystrokeAction = new KeystrokeAction().fromJsonObject(keyAction as JsonObjectKeystrokeAction, serialisationInfo);
                 if (isValidKeystrokeAction(keystrokeAction)) {
                     return keystrokeAction;
                 }
 
                 return new NoneAction();
             }
+            case keyActionType.MacroArgumentAction:
+                return new MacroArgumentAction().fromJsonObject(keyAction);
             case keyActionType.SwitchLayerAction:
                 return new SwitchLayerAction().fromJsonObject(keyAction, serialisationInfo);
             case keyActionType.SwitchKeymapAction:
@@ -157,7 +178,7 @@ export class Helper {
             case keyActionType.NoneBlockAction:
                 return new NoneBlockAction().fromJsonObject(keyAction, serialisationInfo);
             default:
-                throw `Invalid KeyAction.keyActionType: "${keyAction.keyActionType}"`;
+                throw new Error(`Invalid KeyAction.keyActionType: "${keyAction.keyActionType}"`);
         }
     }
 }

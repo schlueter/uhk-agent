@@ -8,7 +8,7 @@ import {
     getDefaultHalvesInfo,
     HalvesInfo,
     HardwareModules,
-    isVersionGte,
+    isVersionGteV1CanUndefined,
     LeftSlotModules,
     RightSlotModules,
     UdevRulesInfo,
@@ -32,6 +32,7 @@ export interface State {
     dongle?: Dongle;
     isKeyboardLayoutChanging: boolean;
     isPairedWithDongle?: boolean;
+    activeKeymapIndex?: number;
     connectedDevice: UhkDeviceProduct;
     hasPermission: boolean;
     hideStatusBufferError: boolean;
@@ -39,6 +40,7 @@ export interface State {
     deviceConnectionStateLoaded: boolean;
     hostConnectionPairState: Record<string, boolean>;
     isErasingBleSettings: boolean;
+    isHalvesBondBroken: boolean;
     keyboardHalvesAlwaysJoined: boolean;
     leftHalfBootloaderActive: boolean;
     leftHalfDetected: boolean;
@@ -69,6 +71,7 @@ export const initialState: State = {
     hideStatusBufferError: false,
     hostConnectionPairState: {},
     isErasingBleSettings: false,
+    isHalvesBondBroken: false,
     keyboardHalvesAlwaysJoined: false,
     leftHalfBootloaderActive: false,
     leftHalfDetected: false,
@@ -154,6 +157,8 @@ export function reducer(state = initialState, action: Action): State {
                 bleDeviceConnected: data.bleDeviceConnected,
                 dongle: data.dongle,
                 isPairedWithDongle: data.isPairedWithDongle,
+                isHalvesBondBroken: data.isHalvesBondBroken,
+                activeKeymapIndex: data.activeKeymapIndex,
                 connectedDevice: data.connectedDevice,
                 deviceConnectionStateLoaded: true,
                 hasPermission: data.hasPermission,
@@ -226,7 +231,24 @@ export function reducer(state = initialState, action: Action): State {
                 saveToKeyboard: {
                     showButton: true,
                     text: 'Saving',
-                    showProgress: true
+                    showProgress: true,
+                    progressPercent: 0
+                }
+            };
+        }
+
+        case Device.ActionTypes.SaveConfigurationProgressChanged: {
+            if (!state.saveToKeyboard.showProgress) {
+                return state;
+            }
+
+            const progress = (action as Device.SaveConfigurationProgressChangedAction).payload;
+
+            return {
+                ...state,
+                saveToKeyboard: {
+                    ...state.saveToKeyboard,
+                    progressPercent: progress
                 }
             };
         }
@@ -237,7 +259,9 @@ export function reducer(state = initialState, action: Action): State {
                 saveToKeyboard: {
                     showButton: true,
                     text: 'Saved!',
-                    action: null
+                    action: null,
+                    showProgress: true,
+                    progressPercent: 100
                 },
                 restoringUserConfiguration: false
             };
@@ -352,6 +376,7 @@ export function reducer(state = initialState, action: Action): State {
 export const hasDevicePermission = (state: State) => state.hasPermission && state.udevRuleInfo === UdevRulesInfo.Ok;
 export const getDeviceBleAddress = (state: State): string => state.bleAddress;
 export const getDevicePairedWithDongle = (state: State): boolean => state.isPairedWithDongle;
+export const isHalvesBondBroken = (state: State): boolean => state.isHalvesBondBroken;
 export const getMissingDeviceState = (state: State): MissingDeviceState => {
     if (!state.deviceConnectionStateLoaded) {
         return {
@@ -401,7 +426,7 @@ export const getEraseBleSettingsButtonState = (state: State): EraseBleSettingsBu
     return {
         disabled: state.isErasingBleSettings,
         erasing: state.isErasingBleSettings,
-        visible: isVersionGte(state.modules.rightModuleInfo.deviceProtocolVersion, '4.14.0')
+        visible: isVersionGteV1CanUndefined(state.modules.rightModuleInfo.deviceProtocolVersion, '4.14.0')
     };
 };
 export const getHardwareModules = (state: State) => state.modules;
@@ -448,6 +473,7 @@ export const deviceUiState = (state: State): DeviceUiStates | undefined => {
 };
 
 export const getConnectedDevice = (state: State) => state.connectedDevice;
+export const getActiveKeymapIndex = (state: State) => state.activeKeymapIndex;
 export const getHostConnectionPairState = (state: State): Record<string, boolean> => state.hostConnectionPairState;
 export const getLeftHalfDetected = (state: State) => state.leftHalfDetected;
 export const getSkipFirmwareUpgrade = (state: State) => state.skipFirmwareUpgrade;

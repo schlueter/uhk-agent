@@ -29,6 +29,7 @@ export class Keymap {
         this.layers = keymap.layers.map(layer => new Layer(layer));
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObject(jsonObject: any, macros: Macro[], serialisationInfo: SerialisationInfo): Keymap {
         switch (serialisationInfo.userConfigMajorVersion) {
             case 1:
@@ -42,6 +43,9 @@ export class Keymap {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromJsonObjectV1(jsonObject, macros, serialisationInfo);
                 break;
 
@@ -67,6 +71,9 @@ export class Keymap {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromBinaryV1(buffer, macros, serialisationInfo);
                 break;
 
@@ -79,6 +86,7 @@ export class Keymap {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]): any {
         return {
             isDefault: this.isDefault,
@@ -134,14 +142,6 @@ export class Keymap {
             for (let keyActionId = 0; keyActionId < baseModule.keyActions.length; keyActionId++) {
                 const baseKeyAction = baseModule.keyActions[keyActionId];
 
-                if (baseKeyAction instanceof SwitchLayerAction) {
-                    const destinationLayerId = baseKeyAction.layer + 1;
-                    if (this.layers.length < destinationLayerId) {
-                        // TODO: What should we do???
-                        console.error(`${this.name} has not enough layer. Need: ${destinationLayerId}`);
-                    }
-                }
-
                 for (let currentLayerId = 1; currentLayerId < this.layers.length; currentLayerId++) {
                     const currentLayer = this.layers[currentLayerId];
                     if (currentLayer.modules.length < moduleId) {
@@ -164,6 +164,7 @@ export class Keymap {
                                 console.warn(error);
                             } else {
                                 const error = `${this.name}.layers[${currentLayerId}]modules[${moduleId}].keyActions[${keyActionId}]` +
+                                    // eslint-disable-next-line @typescript-eslint/no-base-to-string
                                     ` is not switch layer. ${currentKeyAction} will be override with ${baseKeyAction}`;
                                 console.warn(error);
                             }
@@ -183,12 +184,13 @@ export class Keymap {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fromJsonObjectV1(jsonObject: any, macros: Macro[], serialisationInfo: SerialisationInfo): void {
         this.isDefault = jsonObject.isDefault;
         this.abbreviation = jsonObject.abbreviation;
         this.name = jsonObject.name;
         this.description = jsonObject.description;
-        this.layers = jsonObject.layers.map((layer: any) => new Layer().fromJsonObject(layer, macros, serialisationInfo));
+        this.layers = jsonObject.layers.map((layer) => new Layer().fromJsonObject(layer, macros, serialisationInfo));
     }
 
     private fromBinaryV1(buffer: UhkBuffer, macros: Macro[], serialisationInfo: SerialisationInfo): void {

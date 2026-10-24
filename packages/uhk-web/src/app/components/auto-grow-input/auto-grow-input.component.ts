@@ -4,7 +4,9 @@ import {
     ChangeDetectorRef,
     Component,
     ElementRef,
-    forwardRef, HostListener,
+    forwardRef,
+    HostListener,
+    inject,
     Input,
     OnChanges,
     Renderer2,
@@ -14,7 +16,7 @@ import {
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import * as util from '../../util';
 
-const noop = (_: any) => {
+const noop: Function = () => {
 };
 
 @Component({
@@ -55,15 +57,13 @@ export class AutoGrowInputComponent implements ControlValueAccessor, AfterViewIn
         this._model = value;
     }
 
+    private readonly _cdRef = inject(ChangeDetectorRef);
     private _model: string;
     private _originalModel: string;
     private _onChanged = noop;
     private _onTouched = noop;
     private _inEditMode = false;
-
-    constructor(private _cdRef: ChangeDetectorRef,
-                private _renderer: Renderer2) {
-    }
+    private readonly _renderer = inject(Renderer2);
 
     ngOnChanges(changes: SimpleChanges): void {
         if (changes.selectAfterInit?.currentValue) {
@@ -84,11 +84,11 @@ export class AutoGrowInputComponent implements ControlValueAccessor, AfterViewIn
         }
     }
 
-    registerOnChange(fn: any): void {
+    registerOnChange(fn: Function): void {
         this._onChanged = fn;
     }
 
-    registerOnTouched(fn: any): void {
+    registerOnTouched(fn: Function): void {
         this._onTouched = fn;
     }
 
@@ -106,7 +106,7 @@ export class AutoGrowInputComponent implements ControlValueAccessor, AfterViewIn
         this.calculateTextWidth(this._model);
     }
 
-    writeValue(obj: any): void {
+    writeValue(obj: string): void {
         if (this.model === obj) {
             return;
         }

@@ -1,9 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { Observable } from 'rxjs';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 
-import { Constants, VERSIONS } from 'uhk-common';
+import { AGENT_CONTRIBUTORS_GITHUB_PAGE_URL, AGENT_GITHUB_URL, VERSIONS } from 'uhk-common';
 
 import { AppState, contributors } from '../../../store';
 import { State } from '../../../store/reducers/contributors.reducer';
@@ -21,14 +21,17 @@ import { GetAgentContributorsAction } from '../../../store/actions/contributors.
 })
 export class AboutComponent implements OnInit {
     version: string = VERSIONS.version;
-    agentGithubUrl: string = Constants.AGENT_GITHUB_URL;
-    agentContributorsUrl: string = Constants.AGENT_CONTRIBUTORS_GITHUB_PAGE_URL;
+    agentTag: string = VERSIONS.agentTag;
+    agentBranch?: string = VERSIONS.agentBranch;
+    isRelease: boolean = /^v\d+\.\d+\.\d+$/.test(VERSIONS.agentTag);
+    agentTagUrl: string = `https://builds.uhk.io/agent/${VERSIONS.agentTag}`;
+    agentGithubUrl: string = AGENT_GITHUB_URL;
+    agentContributorsUrl: string = AGENT_CONTRIBUTORS_GITHUB_PAGE_URL;
     logoClickCounter = 0;
     state$: Observable<State>;
     faSpinner = faSpinner;
 
-    constructor(private store: Store<AppState>) {
-    }
+    private readonly store = inject<Store<AppState>>(Store);
 
     ngOnInit() {
         this.state$ = this.store.select(contributors);

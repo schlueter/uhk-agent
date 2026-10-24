@@ -1,3 +1,4 @@
+export * from './bond-state.js';
 export * from './debug-info.js';
 export * from './device-state.js';
 export * from './duration.js';
@@ -8,3 +9,4 @@ export * from './pairing-info.js';
 export * from './reenumerate-option.js';
 export * from './reenumerate-result.js';
 export * from './tmp-firmware.js';
+export * from './update-module-with-kboot-options.js';

@@ -2,12 +2,12 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "../uhk-agent/dist/out-tsc",
+    "esModuleInterop": true,
     "declaration": false,
-    "module": "es2015",
-    "moduleResolution": "node",
-    "target": "ES2021",
+    "moduleResolution": "bundler",
+    "useDefineForClassFields": false,
     "lib": [
-      "dom",
+      "dom"
     ]
   },
   "angularCompilerOptions": {

@@ -1,9 +1,9 @@
+import { mkdir } from 'node:fs/promises';
 import * as path from 'path';
-import { pipeline } from 'stream/promises';
 import urlJoin from 'url-join';
-import fs from 'fs-extra';
-import got from 'got';
 import { Octokit } from '@octokit/rest';
+
+import { downloadFile } from './download-file.js';
 
 export interface DownloadTreeToFolderOptions {
     commitSha: string;
@@ -15,7 +15,7 @@ export interface DownloadTreeToFolderOptions {
 }
 
 export async function downloadTreeToFolder(options: DownloadTreeToFolderOptions): Promise<void> {
-    await fs.ensureDir(options.downloadDirectory);
+    await mkdir(options.downloadDirectory, { recursive: true });
 
     const octokit = new Octokit();
 
@@ -34,7 +34,7 @@ export async function downloadTreeToFolder(options: DownloadTreeToFolderOptions)
 
         if (pathSplit.length > 1) {
             const subDir = path.join(options.downloadDirectory, ...pathSplit.slice(0, -1));
-            await fs.ensureDir(subDir);
+            await mkdir(subDir, { recursive: true });
         }
 
         const githubRawUrl = urlJoin(
@@ -47,9 +47,6 @@ export async function downloadTreeToFolder(options: DownloadTreeToFolderOptions)
         );
 
         const filePath = path.join(options.downloadDirectory, node.path);
-        await pipeline(
-            got.stream(githubRawUrl),
-            fs.createWriteStream(filePath)
-        );
+        await downloadFile(githubRawUrl, filePath);
     }
 }

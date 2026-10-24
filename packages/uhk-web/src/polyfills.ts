@@ -30,12 +30,6 @@ import 'zone.js';  // Included with Angular CLI.
  */
 import '@angular/localize/init';
 
-// Other hack to survive
-// https://github.com/valor-software/ng2-dragula/issues/849#issuecomment-385518621
-if (!(window as any).global) {
-    (window as any).global = window;
-}
-
 /**
  * Date, currency, decimal and percent pipes.
  * Needed for: All but Chrome, Firefox, Edge, IE11 and Safari 10

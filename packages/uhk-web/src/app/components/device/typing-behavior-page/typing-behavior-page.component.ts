@@ -1,14 +1,21 @@
-import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { faSlidersH } from '@fortawesome/free-solid-svg-icons';
 import { Store } from '@ngrx/store';
 import { Subscription } from 'rxjs';
 import {
+    AdvancedSecondaryRoleConfiguration,
     SecondaryRoleStrategy,
     SecondaryRoleAdvancedStrategyTimeoutAction,
+    SecondaryRoleAdvancedStrategyTimeoutType,
+    SecondaryRoleAdvancedStrategyTriggeringEvent,
 } from 'uhk-common';
 
-import { AppState, getUserConfiguration } from '../../../store';
-import { SetUserConfigurationValueAction } from '../../../store/actions/user-config';
+import { TypingBehaviorPreset } from '../../../models/typing-behavior-preset';
+import { AppState, calculateTypingBehaviorPresets, getUserConfiguration } from '../../../store';
+import {
+    LoadTypingBehaviorPresetAction,
+    SetUserConfigurationValueAction,
+} from '../../../store/actions/user-config';
 
 @Component({
     selector: 'typing-behavior-page',
@@ -19,26 +26,56 @@ import { SetUserConfigurationValueAction } from '../../../store/actions/user-con
         'class': 'container-fluid d-block'
     }
 })
-export class TypingBehaviorPage implements OnInit, OnDestroy {
+export class TypingBehaviorPage implements AdvancedSecondaryRoleConfiguration, OnInit, OnDestroy {
     faSlidersH = faSlidersH;
-    SecondaryRoleStrategy = SecondaryRoleStrategy;
-    SecondaryRoleAdvancedStrategyTimeoutAction = SecondaryRoleAdvancedStrategyTimeoutAction;
+    SecondaryRoleAdvancedStrategyTriggeringEvent = SecondaryRoleAdvancedStrategyTriggeringEvent;
 
     secondaryRoleStrategy = SecondaryRoleStrategy.Simple;
     secondaryRoleAdvancedStrategyTimeout = 350;
     secondaryRoleAdvancedStrategyTimeoutAction = SecondaryRoleAdvancedStrategyTimeoutAction.Secondary;
-    secondaryRoleAdvancedStrategyTriggerByRelease = true;
+    secondaryRoleAdvancedStrategyTimeoutType = SecondaryRoleAdvancedStrategyTimeoutType.Active;
+    secondaryRoleAdvancedStrategyTrigger = SecondaryRoleAdvancedStrategyTriggeringEvent.Release;
     secondaryRoleAdvancedStrategySafetyMargin = 50;
     secondaryRoleAdvancedStrategyDoubletapToPrimary = true;
-    secondaryRoleAdvancedStrategyDoubletapTimeout = 200;
+    secondaryRoleAdvancedStrategyTriggerByMouse = false;
+    secondaryRoleAdvancedStrategyTriggerFromSameHalf = true;
+    secondaryRoleAdvancedStrategyMinimumHoldTime = 0;
 
     doubletapTimeout = 400;
     keystrokeDelay = 0;
 
-    private userConfigSubscription: Subscription;
+    typingBehaviorPresets: TypingBehaviorPreset[] = []
 
-    constructor(private store: Store<AppState>,
-        private cdRef: ChangeDetectorRef) {}
+    timeoutActionActionDropdownOptions = [
+        {
+            id: SecondaryRoleAdvancedStrategyTimeoutAction.Primary,
+            text: 'Primary'
+        },
+        {
+            id: SecondaryRoleAdvancedStrategyTimeoutAction.Secondary,
+            text: 'Secondary'
+        },
+        {
+            id: SecondaryRoleAdvancedStrategyTimeoutAction.None,
+            text: 'None'
+        }
+    ]
+
+    timeoutActionTypeDropdownOptions = [
+        {
+            id: SecondaryRoleAdvancedStrategyTimeoutType.Active,
+            text: 'activated immediately'
+        },
+        {
+            id: SecondaryRoleAdvancedStrategyTimeoutType.Passive,
+            text: 'on uninterrupted release'
+        },
+    ]
+
+    private readonly cdRef = inject(ChangeDetectorRef);
+    private userConfigSubscription: Subscription;
+    private readonly store = inject<Store<AppState>>(Store);
+    private typingBehaviorPresetsSubscription: Subscription;
 
     ngOnInit(): void {
         this.userConfigSubscription = this.store.select(getUserConfiguration)
@@ -46,28 +83,50 @@ export class TypingBehaviorPage implements OnInit, OnDestroy {
                 this.secondaryRoleStrategy = config.secondaryRoleStrategy;
                 this.secondaryRoleAdvancedStrategyTimeout = config.secondaryRoleAdvancedStrategyTimeout;
                 this.secondaryRoleAdvancedStrategyTimeoutAction = config.secondaryRoleAdvancedStrategyTimeoutAction;
-                this.secondaryRoleAdvancedStrategyTriggerByRelease = config.secondaryRoleAdvancedStrategyTriggerByRelease;
+                this.secondaryRoleAdvancedStrategyTrigger = config.secondaryRoleAdvancedStrategyTrigger;
                 this.secondaryRoleAdvancedStrategySafetyMargin = config.secondaryRoleAdvancedStrategySafetyMargin;
                 this.secondaryRoleAdvancedStrategyDoubletapToPrimary = config.secondaryRoleAdvancedStrategyDoubletapToPrimary;
-                this.secondaryRoleAdvancedStrategyDoubletapTimeout = config.secondaryRoleAdvancedStrategyDoubletapTimeout;
+                this.secondaryRoleAdvancedStrategyTriggerByMouse = config.secondaryRoleAdvancedStrategyTriggerByMouse;
+                this.secondaryRoleAdvancedStrategyTriggerFromSameHalf = config.secondaryRoleAdvancedStrategyTriggerFromSameHalf;
+                this.secondaryRoleAdvancedStrategyMinimumHoldTime = config.secondaryRoleAdvancedStrategyMinimumHoldTime;
+                this.secondaryRoleAdvancedStrategyTimeoutType = config.secondaryRoleAdvancedStrategyTimeoutType;
 
                 this.doubletapTimeout = config.doubletapTimeout;
                 this.keystrokeDelay = config.keystrokeDelay;
 
                 this.cdRef.detectChanges();
             });
+        this.typingBehaviorPresetsSubscription = this.store.select(calculateTypingBehaviorPresets)
+            .subscribe(presets => {
+                this.typingBehaviorPresets = presets;
+                this.cdRef.detectChanges();
+            })
     }
 
     ngOnDestroy(): void {
         if (this.userConfigSubscription) {
             this.userConfigSubscription.unsubscribe();
         }
+        this.typingBehaviorPresetsSubscription?.unsubscribe();
+    }
+
+    onLoadPreset(name: string): void {
+        this.store.dispatch(new LoadTypingBehaviorPresetAction(name));
     }
 
     onSetPropertyValue(propertyName: string, value: number): void {
+        // The slider fires a change event after preset loaded otherwise it Changes the Simple preset to Advanced
+        if (this[propertyName] === value) {
+            return;
+        }
+
         this.store.dispatch(new SetUserConfigurationValueAction({
             propertyName,
             value
         }));
+    }
+
+    trackPresets(index: number, preset: TypingBehaviorPreset): string {
+        return preset.name;
     }
 }

@@ -2,10 +2,12 @@
 import { Buffer } from '../buffer.js';
 
 import { HardwareConfiguration, UhkBuffer, UserConfiguration } from '../config-serializer/index.js';
+import { UHK_EEPROM_SIZE } from './constants.js';
+import { readUserConfigurationVersionFromBinary } from './read-user-configuration-version.js';
 import { shouldUpgradeAgent } from './should-upgrade-agent.js';
 
 export const getHardwareConfigFromDeviceResponse = (json: string): HardwareConfiguration => {
-    const data = JSON.parse(json);
+    const data: number[] = JSON.parse(json);
     const hardwareConfig = new HardwareConfiguration();
     hardwareConfig.fromBinary(UhkBuffer.fromArray(data));
 
@@ -31,14 +33,9 @@ export interface ParsedUserConfiguration {
 
 export const getUserConfigFromDeviceResponse = (json: string): ParsedUserConfiguration => {
     try {
-        const data = JSON.parse(json);
+        const data: number[] = JSON.parse(json);
         const uhkBuffer = UhkBuffer.fromArray(data)
-        const userConfigMajorVersion = uhkBuffer.readUInt16();
-        const userConfigMinorVersion = uhkBuffer.readUInt16();
-        const userConfigPatchVersion = uhkBuffer.readUInt16();
-        uhkBuffer.offset = 0;
-
-        const userConfigurationVersion = `${userConfigMajorVersion}.${userConfigMinorVersion}.${userConfigPatchVersion}`
+        const userConfigurationVersion = readUserConfigurationVersionFromBinary(uhkBuffer);
         if (shouldUpgradeAgent(userConfigurationVersion, false)) {
             return {
                 result: 'newer',
@@ -71,6 +68,7 @@ export const getUserConfigFromDeviceResponse = (json: string): ParsedUserConfigu
     }
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const getUserConfigFromJsonObject = (data: any): UserConfiguration  => {
     const userConfig = new UserConfiguration();
     userConfig.fromJsonObject(data);
@@ -82,10 +80,11 @@ export const getUserConfigFromJsonObject = (data: any): UserConfiguration  => {
     throw Error('JSON string is an invalid user configuration');
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const mapObjectToUserConfigBinaryBuffer = (obj: any): Buffer => {
     const configuration = new UserConfiguration();
     configuration.fromJsonObject(obj);
-    const buffer = new UhkBuffer(32768);
+    const buffer = new UhkBuffer(UHK_EEPROM_SIZE);
     configuration.toBinary(buffer);
 
     return buffer.getBufferContent();

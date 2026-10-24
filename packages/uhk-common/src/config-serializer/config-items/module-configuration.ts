@@ -80,6 +80,7 @@ export class ModuleConfiguration {
         this.touchpadPinchToZoom = other.touchpadPinchToZoom;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObject(jsonObject: any, serialisationInfo: SerialisationInfo): ModuleConfiguration {
         switch (serialisationInfo.userConfigMajorVersion) {
             case 1:
@@ -95,6 +96,9 @@ export class ModuleConfiguration {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromJsonObjectV7(jsonObject);
                 break;
 
@@ -120,6 +124,9 @@ export class ModuleConfiguration {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromBinaryV7(buffer);
                 break;
 
@@ -130,7 +137,9 @@ export class ModuleConfiguration {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     toJsonObject(): any {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const json: any = {
             id: ModuleId[this.id],
 
@@ -231,6 +240,7 @@ export class ModuleConfiguration {
         return `<ModuleConfiguration id="${this.id}" >`;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fromJsonObjectV7(jsonObject: any): void {
         this.id = ModuleId[jsonObject.id as string];
 
@@ -278,7 +288,7 @@ export class ModuleConfiguration {
         this.navigationModeFn4Layer = buffer.readUInt8();
         this.navigationModeFn5Layer = buffer.readUInt8();
 
-        let numberOfProperties = buffer.readUInt8();
+        const numberOfProperties = buffer.readUInt8();
 
         for(let index = 0; index < numberOfProperties; index++){
             const property = buffer.readUInt8();

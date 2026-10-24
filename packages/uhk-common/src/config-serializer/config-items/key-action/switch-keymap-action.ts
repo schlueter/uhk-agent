@@ -27,6 +27,7 @@ export class SwitchKeymapAction extends KeyAction {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObject(jsonObject: any, serialisationInfo: SerialisationInfo): SwitchKeymapAction {
         switch (serialisationInfo.userConfigMajorVersion) {
             case 1:
@@ -43,6 +44,9 @@ export class SwitchKeymapAction extends KeyAction {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromJsonObjectV6(jsonObject, serialisationInfo);
                 break;
 
@@ -53,6 +57,7 @@ export class SwitchKeymapAction extends KeyAction {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     toJsonObject(serialisationInfo: SerialisationInfo): any {
         return {
             keyActionType: keyActionType.SwitchKeymapAction,
@@ -83,11 +88,13 @@ export class SwitchKeymapAction extends KeyAction {
         return 'SwitchKeymapAction';
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fromJsonObjectV1(jsonObject: any): void {
         this.assertKeyActionType(jsonObject);
         this.keymapAbbreviation = jsonObject.keymapAbbreviation;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fromJsonObjectV6(jsonObject: any, serialisationInfo: SerialisationInfo): void {
         this.fromJsonObjectV1(jsonObject);
         this.rgbColorFromJson(jsonObject, serialisationInfo);
@@ -119,6 +126,9 @@ export class UnresolvedSwitchKeymapAction extends KeyAction {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromBinaryV6(buffer, serialisationInfo);
                 break;
 
@@ -135,6 +145,7 @@ export class UnresolvedSwitchKeymapAction extends KeyAction {
         this.rgbColorToBinary(buffer, serialisationInfo);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     toJsonObject(): any {
         throw new Error('UnresolvedSwitchKeymapAction cannot be serialized directly. Convert it to SwitchKeymapAction first.');
     }

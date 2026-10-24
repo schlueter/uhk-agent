@@ -12,6 +12,7 @@ export enum ActionTypes {
     startLeftHalfPairing = '[advanceSettings] start left half pairing',
     leftHalfPairingSuccess = '[advanceSettings] left half pairing success',
     leftHalfPairingFailed = '[advanceSettings] left half pairing failed',
+    halvesBondCheckTimeout = '[advanceSettings] halves bond check timeout',
     toggleI2CDebugging = '[advanceSettings] toggle I2c debugging',
     toggleI2CDebuggingRingBell = '[advanceSettings] toggle I2c debugging ring bell',
     toggleDongleZephyrLogging = '[advanceSettings] toggle left dongle zephyr logging',
@@ -19,6 +20,7 @@ export enum ActionTypes {
     toggleRightHalfZephyrLogging = '[advanceSettings] toggle right half zephyr logging',
     toggleZephyrLogging = '[advanceSettings] toggle zephyr logging',
     showAdvancedSettingsMenu = '[advanceSettings] show menu',
+    toggleAlwaysEnableAdvancedMode = '[advanceSettings] toggle always enable advanced mode',
     zephyrLog = '[advanceSettings] zephyr log',
 }
 
@@ -99,8 +101,18 @@ export class LeftHalfPairingFailedAction implements Action {
     constructor(public payload: string) {}
 }
 
+export class HalvesBondCheckTimeoutAction implements Action {
+    type = ActionTypes.halvesBondCheckTimeout;
+}
+
 export class ShowAdvancedSettingsMenuAction implements Action {
     type = ActionTypes.showAdvancedSettingsMenu;
+}
+
+export class ToggleAlwaysEnableAdvancedModeAction implements Action {
+    type = ActionTypes.toggleAlwaysEnableAdvancedMode;
+
+    constructor(public payload: boolean) {}
 }
 
 export class ZephyrLogAction implements Action {
@@ -124,8 +136,10 @@ export type Actions =
     | ToggleRightHalfZephyrLoggingAction
     | ToggleZephyrLoggingAction
     | ShowAdvancedSettingsMenuAction
+    | ToggleAlwaysEnableAdvancedModeAction
     | StartLeftHalfPairingAction
     | LeftHalfPairingSuccessAction
     | LeftHalfPairingFailedAction
+    | HalvesBondCheckTimeoutAction
     | ZephyrLogAction
     ;

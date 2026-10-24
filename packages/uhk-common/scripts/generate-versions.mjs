@@ -1,6 +1,9 @@
+import { exec } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import process from 'node:process';
 
+import getGithubTag from '../../../scripts/get-github-tag.mjs';
 const rootPackageJsonPath = path.join(import.meta.dirname, '../../../package.json');
 const packageJsonContent = await fs.readFile(rootPackageJsonPath, { encoding: 'utf8' });
 const packageJson = JSON.parse(packageJsonContent)
@@ -9,6 +12,9 @@ const versionsFileContent = `\
 import { VersionInformation } from '../models/version-information.js';
 
 export const VERSIONS: VersionInformation = {
+    agentRepo: ${writeValue(getGitRepo())},
+    agentTag: ${writeValue(await getGitTag())},
+    agentBranch: ${writeValue(await getGitBranch())},
     version: ${writeValue(packageJson.version)},
     firmwareVersion: ${writeValue(packageJson.firmwareVersion)},
     deviceProtocolVersion: ${writeValue(packageJson.deviceProtocolVersion)},
@@ -16,6 +22,11 @@ export const VERSIONS: VersionInformation = {
     hardwareConfigVersion: ${writeValue(packageJson.hardwareConfigVersion)},
 }
 `
+
+if (process.env.CI) {
+    console.log('versions.ts file content:')
+    console.log(versionsFileContent);
+}
 
 const versionsFilePath = path.join(import.meta.dirname, '../src/util/versions.ts')
 await fs.writeFile(versionsFilePath, versionsFileContent, { encoding: 'utf8' });
@@ -30,4 +41,78 @@ function writeValue(value) {
     }
 
     return `'${value}'`;
+}
+
+function getGitRepo() {
+    if (process.env.CI) {
+        return process.env.GITHUB_REPOSITORY;
+    }
+
+    return 'UltimateHackingKeyboard/agent'
+}
+
+async function getGitTag() {
+    if (process.env.CI) {
+        const tag = getGithubTag();
+        if (tag) {
+            return tag;
+        }
+    }
+
+    try {
+        const tagResponse = await execAsync('git describe --exact-match --tags')
+
+        if (tagResponse.stdout) {
+            return tagResponse.stdout.trim()
+        }
+    } catch (error) {
+        console.log('No Agent git tag fallback to sha')
+    }
+
+    // fallback to git sha
+    const shaResponse = await execAsync('git rev-parse --verify --short HEAD')
+
+    return shaResponse.stdout.trim()
+}
+
+async function getGitBranch() {
+    if (process.env.CI) {
+        const branch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME;
+
+        // GITHUB_REF_NAME is the tag name on tag builds, where the branch is irrelevant
+        if (branch && !/^v\d+\.\d+\.\d+$/.test(branch)) {
+            return branch;
+        }
+
+        return undefined;
+    }
+
+    try {
+        const branchResponse = await execAsync('git rev-parse --abbrev-ref HEAD');
+        const branch = branchResponse.stdout.trim();
+
+        // "HEAD" means a detached HEAD, which has no branch
+        if (branch && branch !== 'HEAD') {
+            return branch;
+        }
+    } catch (error) {
+        console.log('Failed to determine the Agent git branch')
+    }
+
+    return undefined;
+}
+
+async function execAsync(command) {
+    return new Promise((resolve, reject) => {
+        exec(command, (error, stdout, stderr) => {
+            if (error) {
+                return reject(error);
+            }
+
+            resolve({
+                stdout,
+                stderr,
+            });
+        })
+    })
 }

@@ -24,9 +24,11 @@ export enum KeyActionId {
     ConnectionsAction            = 36,
     OtherAction                  = 37,
     NoneBlockAction              = 38,
+    KeyLabelAction               = 39,
+    MacroArgumentAction          = 40,
 }
 
-export let keyActionType = {
+export const keyActionType = {
     NoneAction                   : 'none',
     KeystrokeAction              : 'keystroke',
     SwitchLayerAction            : 'switchLayer',
@@ -36,6 +38,8 @@ export let keyActionType = {
     PlayMacroAction              : 'playMacro',
     ConnectionsAction            : 'connections',
     OtherAction                  : 'other',
+    KeyLabelAction               : 'keyLabel',
+    MacroArgumentAction          : 'macroArgument',
 };
 
 const DEFAULT_RGB_COLOR = defaultRgbColor()
@@ -45,18 +49,21 @@ export abstract class KeyAction implements RgbColorInterface {
     @assertUInt8 b = DEFAULT_RGB_COLOR.b;
     @assertUInt8 g = DEFAULT_RGB_COLOR.g;
     @assertUInt8 r = DEFAULT_RGB_COLOR.r;
+    label = '';
 
-    protected constructor(keyAction?: RgbColorInterface) {
+    protected constructor(keyAction?: RgbColorInterface & { label?: string }) {
         this.b = keyAction?.b ?? DEFAULT_RGB_COLOR.b;
         this.g = keyAction?.g ?? DEFAULT_RGB_COLOR.g;
         this.r = keyAction?.r ?? DEFAULT_RGB_COLOR.r;
+        this.label = keyAction?.label ?? '';
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     assertKeyActionType(jsObject: any): void {
         const keyActionClassname: string = this.getName();
         const keyActionTypeString: string = keyActionType[keyActionClassname];
         if (jsObject.keyActionType !== keyActionTypeString) {
-            throw `Invalid ${keyActionClassname}.keyActionType: ${jsObject.keyActionType}`;
+            throw new Error(`Invalid ${keyActionClassname}.keyActionType: ${jsObject.keyActionType}`);
         }
     }
 
@@ -66,14 +73,15 @@ export abstract class KeyAction implements RgbColorInterface {
         const keyActionId: number = KeyActionId[classname];
         if (keyActionId === KeyActionId.KeystrokeAction) {
             if (readKeyActionId < KeyActionId.KeystrokeAction || readKeyActionId > KeyActionId.LastKeystrokeAction) {
-                throw `Invalid ${classname} first byte: ${readKeyActionId}`;
+                throw new Error(`Invalid ${classname} first byte: ${readKeyActionId}`);
             }
         } else if (readKeyActionId !== keyActionId) {
-            throw `Invalid ${classname} first byte: ${readKeyActionId}`;
+            throw new Error(`Invalid ${classname} first byte: ${readKeyActionId}`);
         }
         return readKeyActionId;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     abstract toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]): any;
 
     abstract toBinary(buffer: UhkBuffer, serialisationInfo: SerialisationInfo, userConfiguration?: UserConfiguration): void;
@@ -92,6 +100,7 @@ export abstract class KeyAction implements RgbColorInterface {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rgbColorFromJson(jsonObject: any, serialisationInfo: SerialisationInfo): void {
         if (serialisationInfo.isUserConfigContainsRgbColors) {
             this.b = jsonObject.b;

@@ -13,6 +13,7 @@ import {
 } from './constants.js';
 import { ImageUploadRequest } from './models/image-upload-request.js';
 import { ImageUploadResponseData } from './models/image-upload-response-data.js';
+import { ProgressCallback } from './models/progress-callback.js';
 import { NmpResponse } from './models/nmp.js';
 import { Peripheral } from './peripheral.js';
 import * as cbor from './util/cbor.js';
@@ -64,9 +65,9 @@ export class McuManager {
     /**
      * Query images from the device
      * TODO: Implement response structure
-     * @returns {Promise<*>}
+     * @returns {Promise<NmpResponse<unknown>>}
      */
-    async imageReadState():Promise<any> {
+    async imageReadState():Promise<NmpResponse<unknown>> {
         logger('Start send image read state command');
         return this.sendCommand(MGMT_OP.READ, MGMT_GROUP.IMAGE, IMAGE_OPERATION.STATE);
     }
@@ -74,9 +75,10 @@ export class McuManager {
     /**
      * Upload a firmware/bootloader image to the device
      */
-    async imageUpload(buffer: Buffer): Promise<void> {
+    async imageUpload(buffer: Buffer, onProgress?: ProgressCallback): Promise<void> {
         logger('Start send image upload command: %o', { bufferLength: buffer.byteLength });
         let written = 0;
+        onProgress?.(0);
 
         while (written < buffer.length) {
             const message: ImageUploadRequest = {
@@ -104,7 +106,10 @@ export class McuManager {
             }
 
             logger('Image uploaded: %d', written / buffer.length * 100);
+            onProgress?.(Math.min(100, Math.round(written / buffer.length * 100)));
         }
+
+        onProgress?.(100);
     }
 
     /**
@@ -118,10 +123,10 @@ export class McuManager {
     /**
      * Send command to the microcontroller
      */
-    async sendCommand<T>(op: MGMT_OP_TYPE, group: MGMT_GROUP_TYPE, id: MGMT_OPERATION_TYPE, data?: any): Promise<NmpResponse<T>> {
+    async sendCommand<T>(op: MGMT_OP_TYPE, group: MGMT_GROUP_TYPE, id: MGMT_OPERATION_TYPE, data?: unknown): Promise<NmpResponse<T>> {
         logger('Start send command: %o', {op, group, id, data});
 
-        let encodedData = [];
+        let encodedData: number[] = [];
         if (typeof data !== 'undefined') {
             // the command data is cbor encoded
             const buffer = cbor.encode(data);
@@ -156,7 +161,7 @@ export class McuManager {
     #parseNmpMessage<T>(buffer: Buffer): NmpResponse<T> {
         const [op, flags, length_hi, length_lo, group_hi, group_lo, seq, id] = buffer;
 
-        let data: any;
+        let data: unknown;
 
         // the buffer contains data
         // TODO: Maybe worth validate the length of the data section = header.length
@@ -173,6 +178,7 @@ export class McuManager {
             seq,
             id,
             data,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any;
     }
 

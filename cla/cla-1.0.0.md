@@ -99,8 +99,10 @@ I have read this Agreement, and fully agree to it by signing it with my GitHub u
 
 - @alvherre
 - @attilacsanyi
+- @autopeasant
 - @cokert
 - @csanyiarpad
+- @dandrake
 - @danpalmer
 - @dgyimesi
 - @eltang
@@ -119,3 +121,4 @@ I have read this Agreement, and fully agree to it by signing it with my GitHub u
 - @wormuth
 - @JetsettingJames
 - @benedekkupper
+- @mhantsch

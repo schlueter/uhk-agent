@@ -12,18 +12,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
             persist-credentials: false
 
       - name: Use Node.js (.nvmrc)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm run install
 
       - name: Run Build
         run: npm run build
@@ -32,7 +32,7 @@ jobs:
         run: npm run build:web
 
       - name: Deploy
-        uses: JamesIves/github-pages-deploy-action@4.0.0
+        uses: JamesIves/github-pages-deploy-action@v4.8.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: gh-pages

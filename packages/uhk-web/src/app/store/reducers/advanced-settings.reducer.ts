@@ -1,4 +1,4 @@
-import { getFormattedTimestamp, UhkDeviceProduct } from 'uhk-common';
+import { getFormattedTimestamp, UhkDeviceProduct, ZephyrLogEntry } from 'uhk-common';
 
 import { XtermCssClass, XtermLog } from '../../models/xterm-log';
 import { appendXtermLogs } from '../../util/merge-xterm-logs';
@@ -9,6 +9,7 @@ import {
     IsDongleZephyrLoggingEnabledReplyAction,
     IsLeftHalfZephyrLoggingEnabledReplyAction,
     IsRightHalfZephyrLoggingEnabledReplyAction,
+    ToggleAlwaysEnableAdvancedModeAction,
     ZephyrLogAction,
 } from '../actions/advance-settings.action';
 import * as App from '../actions/app';
@@ -23,29 +24,47 @@ export enum ActiveButton {
 
 export interface State {
     activeButton: ActiveButton;
+    alwaysEnableAdvancedMode: boolean;
     i2cDebuggingRingBellEnabled: boolean,
     i2cLogs: Array<XtermLog>;
     isLeftHalfPairing: boolean;
+    // After a successful pairing, until the device reports a healthy bond or the check times out.
+    isCheckingHalvesBond: boolean;
     isDongleZephyrLoggingEnabled: boolean;
     isLeftHalfZephyrLoggingEnabled: boolean;
     isRightHalfZephyrLoggingEnabled: boolean;
     lastConnectedDevice?: UhkDeviceProduct;
     menuVisible: boolean;
+    zephyrLogs: ZephyrLogEntry[];
 }
 
 export const initialState = (): State => ({
     activeButton: ActiveButton.None,
+    alwaysEnableAdvancedMode: false,
     i2cDebuggingRingBellEnabled: false,
     i2cLogs: [],
     isDongleZephyrLoggingEnabled: false,
     isLeftHalfZephyrLoggingEnabled: false,
     isRightHalfZephyrLoggingEnabled: false,
     isLeftHalfPairing: false,
+    isCheckingHalvesBond: false,
     menuVisible: false,
+    zephyrLogs: [],
 });
 
 export function reducer(state = initialState(), action: Actions | App.Actions | Device.Actions) {
     switch (action.type) {
+
+        case App.ActionTypes.LoadApplicationSettingsSuccess: {
+            const settings = (action as App.LoadApplicationSettingsSuccessAction).payload;
+            const alwaysEnableAdvancedMode = !!settings.alwaysEnableAdvancedMode;
+
+            return {
+                ...state,
+                alwaysEnableAdvancedMode,
+                menuVisible: alwaysEnableAdvancedMode || state.menuVisible,
+            };
+        }
 
         case App.ActionTypes.ElectronMainLogReceived: {
             if (!state.isLeftHalfPairing) {
@@ -80,16 +99,21 @@ export function reducer(state = initialState(), action: Actions | App.Actions | 
 
         case Device.ActionTypes.ConnectionStateChanged: {
             const payload = (action as Device.ConnectionStateChangedAction).payload;
+            const newState = {
+                ...state,
+                isCheckingHalvesBond: state.isCheckingHalvesBond && payload.isHalvesBondBroken,
+            };
+
             if (!payload.connectedDevice) {
-                return state;
+                return newState;
             }
 
             if (payload.connectedDevice?.id === state.lastConnectedDevice?.id) {
-                return state;
+                return newState;
             }
 
             return {
-                ...state,
+                ...newState,
                 activeButton: ActiveButton.None,
                 i2cLogs: [],
                 lastConnectedDevice: payload.connectedDevice,
@@ -141,11 +165,25 @@ export function reducer(state = initialState(), action: Actions | App.Actions | 
             };
         }
 
-        case ActionTypes.leftHalfPairingSuccess:
+        case ActionTypes.leftHalfPairingSuccess: {
+            return {
+                ...state,
+                isLeftHalfPairing: false,
+                isCheckingHalvesBond: true,
+            };
+        }
+
         case ActionTypes.leftHalfPairingFailed: {
             return {
                 ...state,
                 isLeftHalfPairing: false,
+            };
+        }
+
+        case ActionTypes.halvesBondCheckTimeout: {
+            return {
+                ...state,
+                isCheckingHalvesBond: false,
             };
         }
 
@@ -199,7 +237,6 @@ export function reducer(state = initialState(), action: Actions | App.Actions | 
         case ActionTypes.toggleZephyrLogging: {
             return {
                 ...state,
-                i2cLogs: [],
                 activeButton: state.activeButton === ActiveButton.ShowZephyrLogs
                     ? ActiveButton.None
                     : ActiveButton.ShowZephyrLogs,
@@ -211,7 +248,17 @@ export function reducer(state = initialState(), action: Actions | App.Actions | 
         case ActionTypes.showAdvancedSettingsMenu: {
             return {
                 ...state,
-                menuVisible: true
+                menuVisible: true,
+            };
+        }
+
+        case ActionTypes.toggleAlwaysEnableAdvancedMode: {
+            const alwaysEnableAdvancedMode = (action as ToggleAlwaysEnableAdvancedModeAction).payload;
+
+            return {
+                ...state,
+                alwaysEnableAdvancedMode,
+                menuVisible: alwaysEnableAdvancedMode || state.menuVisible,
             };
         }
 
@@ -219,13 +266,15 @@ export function reducer(state = initialState(), action: Actions | App.Actions | 
             const payload = (action as ZephyrLogAction).payload;
             const newState = {...state};
 
-            newState.i2cLogs = [
-                ...state.i2cLogs,
-                {
-                    message: `${getFormattedTimestamp()} | ${payload.device.padEnd(15 )} | ${payload.log}`,
-                    cssClass: payload.level === 'error' ? XtermCssClass.error : XtermCssClass.standard,
-                }
-            ];
+            // the clear command sent so have to clear the history too
+            if (payload.log.startsWith('\\r\\n\\033[H\\033[2J\u001b')) {
+                newState.zephyrLogs.filter(log => log.device !== payload.device);
+            }
+            else {
+                newState.zephyrLogs = [...state.zephyrLogs];
+            }
+
+            newState.zephyrLogs.push(payload);
 
             return newState;
         }
@@ -237,6 +286,8 @@ export function reducer(state = initialState(), action: Actions | App.Actions | 
 }
 
 export const isAdvancedSettingsMenuVisible = (state: State): boolean => state.menuVisible;
+export const isAlwaysEnableAdvancedMode = (state: State): boolean => state.alwaysEnableAdvancedMode;
 export const isLeftHalfPairing = (state: State): boolean => state.isLeftHalfPairing;
+export const isCheckingHalvesBond = (state: State): boolean => state.isCheckingHalvesBond;
 export const isI2cDebuggingEnabled = (state: State): boolean => state.activeButton === ActiveButton.I2CRecoveryDebugging;
 export const isI2cDebuggingRingBellEnabled = (state: State): boolean => state.i2cDebuggingRingBellEnabled;

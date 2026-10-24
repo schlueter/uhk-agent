@@ -48,6 +48,7 @@ export class MouseAction extends KeyAction {
         this.mouseAction = other.mouseAction;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fromJsonObject(jsonObject: any, serialisationInfo: SerialisationInfo): MouseAction {
         switch (serialisationInfo.userConfigMajorVersion) {
             case 1:
@@ -64,6 +65,9 @@ export class MouseAction extends KeyAction {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromJsonObjectV6(jsonObject, serialisationInfo);
                 break;
 
@@ -90,6 +94,9 @@ export class MouseAction extends KeyAction {
             case 9:
             case 11:
             case 12:
+            case 13:
+            case 14:
+            case 15:
                 this.fromBinaryV6(buffer, serialisationInfo);
                 break;
 
@@ -100,6 +107,7 @@ export class MouseAction extends KeyAction {
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     toJsonObject(serialisationInfo: SerialisationInfo): any {
         return {
             keyActionType: keyActionType.MouseAction,
@@ -122,12 +130,14 @@ export class MouseAction extends KeyAction {
         return 'MouseAction';
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fromJsonObjectV1(jsObject: any): MouseAction {
         this.assertKeyActionType(jsObject);
         this.mouseAction = MouseActionParam[<string>jsObject.mouseAction];
         return this;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fromJsonObjectV6(jsObject: any, serialisationInfo: SerialisationInfo): void {
         this.fromJsonObjectV1(jsObject);
         this.rgbColorFromJson(jsObject, serialisationInfo);

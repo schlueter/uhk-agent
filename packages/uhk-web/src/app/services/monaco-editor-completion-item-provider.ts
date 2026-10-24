@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { buildUhkParser, Parser, Suggestion } from 'naive-autocompletion-parser';
 import { LogService } from 'uhk-common';
 
@@ -6,10 +6,11 @@ import { LogService } from 'uhk-common';
 export class MonacoEditorCompletionItemProvider implements monaco.languages.CompletionItemProvider {
     public readonly triggerCharacters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.\\@( \\$'.split('');
 
+    private readonly logService = inject(LogService);
     private parser: Parser | undefined;
     private identifierCharPattern = /[a-zA-Z]/;
 
-    constructor(private logService: LogService) {
+    constructor() {
         this.logService.misc('[MonacoEditorCompletionItemProvider] initialized.');
     }
 
@@ -75,7 +76,7 @@ export class MonacoEditorCompletionItemProvider implements monaco.languages.Comp
         }
 
         const monacoSuggestions: monaco.languages.CompletionItem[] = nelaSuggestions.map(it => {
-            let kind = this.guessKind(it.suggestion, it.originRule);
+            const kind = this.guessKind(it.suggestion, it.originRule);
 
             return {
                 insertText: it.text(),

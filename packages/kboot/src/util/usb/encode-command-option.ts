@@ -1,7 +1,7 @@
-import { isNullOrUndefined } from 'util';
 import { pack } from 'byte-data';
 
 import { CommandOption } from '../../models/command-option.js';
+import { isNullOrUndefined } from '../is-null-or-undefined.js';
 
 /**
  * Encode the USB Command.
@@ -26,12 +26,12 @@ export const encodeCommandOption = (option: CommandOption): number[] => {
     ];
 
     const placeholders = new Array(32 - payload.length)
-        .fill(0);
+        .fill(0) as number[];
 
     return [...header, ...payload, ...placeholders];
 };
 
-export const validateCommandParams = (params: any[]): void => {
+export const validateCommandParams = (params: number[]): void => {
     if (isNullOrUndefined(params)) {
         return;
     }

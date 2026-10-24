@@ -4,6 +4,7 @@ import { Buffer } from '../buffer.js';
 export class UhkBuffer {
 
     static simpleElementWriter<T>(buffer: UhkBuffer, element: T): void {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (<any>element).toBinary(buffer); // TODO: Remove any
     }
 
@@ -187,8 +188,8 @@ export class UhkBuffer {
         const stringByteLength = Buffer.byteLength(str, UhkBuffer.stringEncoding);
 
         if (stringByteLength > UhkBuffer.maxCompactLength) {
-            throw `Cannot serialize string: ${stringByteLength} bytes is larger
-                   than the maximum allowed length of ${UhkBuffer.maxCompactLength} bytes`;
+            throw new Error(`Cannot serialize string: ${stringByteLength} bytes is larger
+                   than the maximum allowed length of ${UhkBuffer.maxCompactLength} bytes`);
         }
 
         this.writeCompactLength(stringByteLength);
@@ -245,7 +246,7 @@ export class UhkBuffer {
         this._enableDump = value;
     }
 
-    dump(value: any) {
+    dump(value: string) {
         if (!this.enableDump) {
             return;
         }

@@ -1,7 +1,13 @@
+import { isEqual } from 'lodash';
+
 import {
+    AdvancedSecondaryRoleConfiguration,
+    ADVANCED_SECONDARY_ROLE_CONFIGURATION_FIELD_NAMES,
+    ADVANCED_SECONDARY_ROLE_CONFIGURATION_FIELD_SET,
+    BUILTIN_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESETS,
     BacklightingMode,
-    ConnectionsAction,
-    Constants,
+    CUSTOM_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET_NAME,
+    CUSTOM_ADVANCED_SECONDARY_ROLE_TOOLTIP,
     emptyHostConnection,
     getDefaultHalvesInfo,
     HalvesInfo,
@@ -18,23 +24,30 @@ import {
     LeftSlotModules,
     Macro,
     MacroActionHelper,
+    MAX_ALLOWED_MACROS,
     MODIFIER_LAYER_NAMES,
     Module,
     ModuleConfiguration,
     MODULES_NONE_CONFIGS,
+    NewPairedDevice,
     NoneAction,
     PlayMacroAction,
     RgbColor,
     RgbColorInterface,
     RightSlotModules,
+    SecondaryRoleStrategy,
+    SIMPLE_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET,
+    SIMPLE_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET_NAME,
     SwitchKeymapAction,
     SwitchLayerAction,
+    UHK_HALVES_AND_MODULE_IDS,
     UserConfiguration
 } from 'uhk-common';
 import {
     BleAddingStates,
     BleAddingState,
     BacklightingOption,
+    CopiedLayerOrigin,
     defaultLastEditKey,
     ExchangeKey,
     LastEditedKey,
@@ -43,11 +56,13 @@ import {
     OpenPopoverModel,
     SelectedMacroAction
 } from '../../models';
+import { TypingBehaviorPreset } from '../../models/typing-behavior-preset';
 import { getDefaultMacMouseSpeeds, getDefaultPcMouseSpeeds } from '../../services/default-mouse-speeds';
 import {
     findModuleById,
     isValidName,
     setSvgKeyboardCoverColorsOfAllLayer,
+    setSvgKeyboardCoverColorsOfKeymapLayers,
     setSvgKeyboardCoverColorsOfLayer,
 } from '../../util';
 import * as AppActions from '../actions/app';
@@ -74,11 +89,16 @@ export interface State {
     lastEditedKey: LastEditedKey;
     layerOptions: Map<number, LayerOption>;
     halvesInfo: HalvesInfo;
-    newPairedDevices: string[];
+    newPairedDevices: NewPairedDevice[];
     newPairedDevicesAdding: boolean;
     newerUserConfiguration?: NewerUserConfiguration;
     selectedLayerOption: LayerOption;
     theme: string;
+    customAdvancedSecondaryRoleConfiguration?: AdvancedSecondaryRoleConfiguration;
+    isCustomPresetTheLastLoadedPreset: boolean;
+    copiedLayer?: Layer;
+    copiedLayerMacroNames?: Map<number, string>;
+    copiedLayerOrigin?: CopiedLayerOrigin;
 }
 
 export const initialState: State = {
@@ -92,7 +112,9 @@ export const initialState: State = {
     newPairedDevices: [],
     newPairedDevicesAdding: false,
     selectedLayerOption: getBaseLayerOption(),
-    theme: ''
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    theme: (window as any).getUhkTheme(),
+    isCustomPresetTheLastLoadedPreset: false,
 };
 
 export function reducer(
@@ -126,19 +148,37 @@ export function reducer(
 
         case UserConfig.ActionTypes.AddNewPairedDevicesToHostConnections: {
             const userConfiguration: UserConfiguration = Object.assign(new UserConfiguration(), state.userConfiguration);
-            userConfiguration.hostConnections = state.userConfiguration.hostConnections.filter(hostConnection => hostConnection.type !== HostConnections.Empty);
-            for (const bleAddress of state.newPairedDevices) {
+            const hostConnections = state.userConfiguration.hostConnections.map(hostConnection => new HostConnection(hostConnection));
+
+            // The slots the firmware reports are indices into the full array, so it must stay
+            // addressable by index and the existing connections must keep their positions.
+            for (let i = hostConnections.length; i < HOST_CONNECTION_COUNT_MAX; i++) {
+                hostConnections.push(emptyHostConnection());
+            }
+
+            for (const newPairedDevice of state.newPairedDevices) {
                 const hostConnection = new HostConnection();
                 hostConnection.type = HostConnections.BLE;
-                hostConnection.address = bleAddress;
-                hostConnection.name = generateHostConnectionName(userConfiguration.hostConnections, 'Bluetooth device');
+                hostConnection.address = newPairedDevice.address;
+                hostConnection.name = generateHostConnectionName(hostConnections, 'Bluetooth device');
 
-                userConfiguration.hostConnections.push(hostConnection);
+                const slot = findHostConnectionSlot(hostConnections, newPairedDevice.slot);
+
+                if (slot === -1) {
+                    // Unreachable while any slot is still empty, so this only happens when the
+                    // keyboard really has more than HOST_CONNECTION_COUNT_MAX hosts. Overflowing the
+                    // array is what puts the UI into the TooMuchHostConnections state, which asks
+                    // the user to delete connections.
+                    hostConnection.index = hostConnections.length;
+                    hostConnections.push(hostConnection);
+                }
+                else {
+                    hostConnection.index = slot;
+                    hostConnections[slot] = hostConnection;
+                }
             }
 
-            for (let i = userConfiguration.hostConnections.length; i < HOST_CONNECTION_COUNT_MAX; i++) {
-                userConfiguration.hostConnections.push(emptyHostConnection());
-            }
+            userConfiguration.hostConnections = hostConnections;
 
             return {
                 ...state,
@@ -155,6 +195,19 @@ export function reducer(
             newState.newerUserConfiguration = undefined;
             newState.selectedKeymapAbbr = undefined;
             newState.layerOptions = calculateLayerOptions(newState);
+
+            // If the secondary role strategy is simple, then always set the simple preset values.
+            // It prevents the UI inconsistency when we change the values of the Simple strategy and the UI shows different values.
+            if (newState.userConfiguration.secondaryRoleStrategy === SecondaryRoleStrategy.Simple) {
+                applyAdvancedSecondaryRoleConfiguration(newState.userConfiguration, SIMPLE_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET.configuration);
+            }
+            else {
+                const advancedSecondaryRoleConfiguration = extractAdvancedSecondaryRoleConfiguration(newState.userConfiguration);
+                newState.isCustomPresetTheLastLoadedPreset = !BUILTIN_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESETS.find(preset => isEqual(preset.configuration, advancedSecondaryRoleConfiguration))
+                if (newState.isCustomPresetTheLastLoadedPreset) {
+                    newState.customAdvancedSecondaryRoleConfiguration = advancedSecondaryRoleConfiguration;
+                }
+            }
 
             return newState;
         }
@@ -298,6 +351,7 @@ export function reducer(
                 newKeymap.name = generateName(state.userConfiguration.keymaps, newKeymap.name);
             }
             newKeymap.isDefault = (state.userConfiguration.keymaps.length === 0);
+            setSvgKeyboardCoverColorsOfKeymapLayers(state.userConfiguration.backlightingMode, newKeymap, state.theme)
 
             const userConfiguration: UserConfiguration = Object.assign(new UserConfiguration(), state.userConfiguration);
             userConfiguration.keymaps = insertItemInNameOrder(state.userConfiguration.keymaps, newKeymap);
@@ -352,6 +406,174 @@ export function reducer(
             newState.layerOptions = calculateLayerOptions(newState);
 
             return newState;
+        }
+
+        case KeymapActions.ActionTypes.CopyLayer: {
+            const layerId = (action as KeymapActions.CopyLayerAction).payload;
+            const currentKeymap = state.userConfiguration.keymaps
+                .find(keymap => keymap.abbreviation === state.selectedKeymapAbbr);
+            const layerToCopy = currentKeymap.layers.find(layer => layer.id === layerId);
+
+            // Snapshot the names of the macros referenced by the copied layer. Macro ids are
+            // config specific, so a later paste (possibly into another keymap or device) has to
+            // re-link them by name.
+            const copiedLayerMacroNames = new Map<number, string>();
+            for (const module of layerToCopy.modules) {
+                for (const keyAction of module.keyActions) {
+                    if (keyAction instanceof PlayMacroAction && !copiedLayerMacroNames.has(keyAction.macroId)) {
+                        const macro = state.userConfiguration.macros.find(m => m.id === keyAction.macroId);
+                        if (macro) {
+                            copiedLayerMacroNames.set(keyAction.macroId, macro.name);
+                        }
+                    }
+                }
+            }
+
+            return {
+                ...state,
+                copiedLayer: new Layer(layerToCopy),
+                copiedLayerMacroNames,
+                copiedLayerOrigin: {
+                    deviceName: state.userConfiguration.deviceName,
+                    keymapName: currentKeymap.name,
+                    layerName: state.layerOptions.get(layerId).name,
+                },
+            };
+        }
+
+        case KeymapActions.ActionTypes.PasteLayer: {
+            const targetLayerId = (action as KeymapActions.PasteLayerAction).payload;
+            const copiedLayer = state.copiedLayer;
+            const macroIdByName = new Map<string, number>(
+                state.userConfiguration.macros.map(macro => [macro.name, macro.id])
+            );
+            const keymapAbbreviations = new Set(state.userConfiguration.keymaps.map(keymap => keymap.abbreviation));
+
+            let pasteToKeymap: Keymap;
+            let pasteToLayer: Layer;
+
+            let userConfiguration: UserConfiguration = Object.assign(new UserConfiguration(), state.userConfiguration);
+            // 1. add module to the existing layer if it does not exist
+            userConfiguration.keymaps = userConfiguration.keymaps.map(keymap => {
+                if (keymap.abbreviation !== state.selectedKeymapAbbr) {
+                    return keymap;
+                }
+
+                keymap = new Keymap(keymap);
+                pasteToKeymap = keymap;
+
+                keymap.layers = keymap.layers.map(layer => {
+                    if (layer.id !== targetLayerId) {
+                        return layer;
+                    }
+
+                    const pastedLayer = new Layer();
+                    pastedLayer.id = layer.id;
+                    pastedLayer.modules = [];
+                    pasteToLayer = pastedLayer;
+
+                    for (const moduleId of UHK_HALVES_AND_MODULE_IDS) {
+                        const destinationModule = layer.modules.find(findModuleById(moduleId));
+                        const copiedModule = copiedLayer.modules.find(findModuleById(moduleId));
+
+                        // the module neither on the destination nor copied layer so we skip it
+                        if (!destinationModule && !copiedModule) {
+                            continue
+                        }
+
+                        // the module exists only on the destination layer
+                        if (destinationModule && !copiedModule) {
+                            pastedLayer.modules.push(destinationModule);
+                        }
+
+                        // use the copied module to ensure every key from it will copy
+                        // for example when uhk 80 key copies to uhk 60
+                        pastedLayer.modules.push(copiedModule);
+                    }
+
+                    setSvgKeyboardCoverColorsOfLayer(userConfiguration.backlightingMode, pastedLayer, state.theme);
+
+                    return pastedLayer;
+                });
+
+                return keymap;
+            });
+
+            // 2. we simulate Remap key events because we have so many business rule
+            // that don't want to duplicate.
+
+            // The base layer drives the SwitchLayerActions
+            // if we copy to the base layer then the copied layer will the base layer
+            const baseLayer = targetLayerId === LayerName.base
+                ? copiedLayer
+                : pasteToKeymap.layers.find(layer => layer.id === LayerName.base)
+
+            // - The SwitchLayerAction of Base layer has precedence
+            // - PlayMacroAction is re-linked to the target macro sharing the copied macro's name; if no such
+            //   macro exists the key becomes a NoneAction (keeping its color).
+            // - SwitchKeymapAction is kept only
+            //    - if the referenced keymap abbreviation still exists, otherwise it
+            //      becomes a NoneAction (keeping its color).
+            //    - if the referenced keymap is different from the pasted keymap
+            for (const copiedModule of copiedLayer.modules) {
+                const baseModule = baseLayer.modules.find(findModuleById(copiedModule.id));
+
+                for (let keyId = 0; keyId < copiedModule.keyActions.length; keyId++) {
+                    const baseKey = baseModule?.keyActions[keyId];
+
+                    let copiedKeyAction = copiedModule.keyActions?.[keyId];
+
+                    if (baseKey instanceof SwitchLayerAction) {
+                        const isLayerExists = pasteToKeymap.layers.some(layer => layer.id === baseKey.layer);
+                        if (isLayerExists) {
+                            copiedKeyAction = new SwitchLayerAction(baseKey);
+                        }
+                        else {
+                            copiedKeyAction = new NoneAction(baseKey);
+                        }
+                    }
+                    else if (copiedKeyAction instanceof PlayMacroAction) {
+                        const macroName = state.copiedLayerMacroNames.get(copiedKeyAction.macroId);
+                        const macroId = macroIdByName.get(macroName);
+
+                        if (macroId === undefined) {
+                            copiedKeyAction = new NoneAction(copiedKeyAction)
+                        }
+                    }
+                    else if (copiedKeyAction instanceof SwitchKeymapAction) {
+                        if (!keymapAbbreviations.has(copiedKeyAction.keymapAbbreviation) || copiedKeyAction.keymapAbbreviation === pasteToKeymap.abbreviation) {
+                            copiedKeyAction = new NoneAction(copiedKeyAction)
+                        }
+                    }
+                    else if (copiedKeyAction instanceof SwitchLayerAction && pasteToLayer.id !== LayerName.base) {
+                        copiedKeyAction = new NoneAction(copiedKeyAction)
+                    }
+                    else if (copiedKeyAction instanceof KeystrokeAction && pasteToLayer.id !== LayerName.base) {
+                        if (copiedKeyAction.secondaryRoleAction !== undefined) {
+                            copiedKeyAction = new NoneAction(copiedKeyAction)
+                        }
+                    }
+
+                    const pasteToKeyAction = new KeymapActions.SaveKeyAction({
+                        keymap: pasteToKeymap,
+                        layer: pasteToLayer.id,
+                        module: copiedModule.id,
+                        key: keyId,
+                        keyAction: {
+                            remapOnAllKeymap: false,
+                            remapOnAllLayer: false,
+                            action: copiedKeyAction
+                        }
+                    });
+
+                    userConfiguration = saveKeyAction(userConfiguration, pasteToKeyAction)
+                }
+            }
+
+            return {
+                ...state,
+                userConfiguration,
+            };
         }
 
         case KeymapActions.ActionTypes.EditName: {
@@ -631,10 +853,13 @@ export function reducer(
             const moduleIndex: number = payload.module;
 
             let newState = state;
+            const originalPlayMacroAction: PlayMacroAction = payload.keyAction.action instanceof PlayMacroAction
+                ? payload.keyAction.action
+                : undefined;
 
             if (payload.keyAction.assignNewMacro) {
                 newState = addNewMacroToState(state);
-                const newAction = new PlayMacroAction();
+                const newAction = new PlayMacroAction(originalPlayMacroAction);
                 newAction.macroId = newState.selectedMacroId;
 
                 processedAction = {
@@ -646,6 +871,12 @@ export function reducer(
                             action: newAction
                         }
                     }
+                };
+            }
+            else if (originalPlayMacroAction && payload.keyAction.navigateToMacro) {
+                return {
+                    ...state,
+                    selectedMacroId: originalPlayMacroAction.macroId
                 };
             }
 
@@ -868,6 +1099,45 @@ export function reducer(
             };
         }
 
+        case UserConfig.ActionTypes.LoadTypingBehaviorPreset: {
+            const payload = (action as UserConfig.LoadTypingBehaviorPresetAction).payload;
+
+            // Currently, we don't have custom saved preset in memory
+            if (payload === CUSTOM_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET_NAME && !state.customAdvancedSecondaryRoleConfiguration) {
+                return {
+                    ...state,
+                    isCustomPresetTheLastLoadedPreset: true,
+                }
+            }
+
+            if (payload === CUSTOM_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET_NAME && state.isCustomPresetTheLastLoadedPreset) {
+                return state
+            }
+
+            const newState = {
+                ...state,
+            }
+            const userConfiguration: UserConfiguration = Object.assign(new UserConfiguration(), state.userConfiguration);
+            newState.userConfiguration = userConfiguration;
+            let presetConfiguration: AdvancedSecondaryRoleConfiguration;
+
+            if (payload === CUSTOM_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET_NAME) {
+                presetConfiguration = state.customAdvancedSecondaryRoleConfiguration;
+                userConfiguration.secondaryRoleStrategy = SecondaryRoleStrategy.Advanced;
+                newState.isCustomPresetTheLastLoadedPreset = true;
+            }
+            else {
+                const preset = BUILTIN_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESETS.find((preset) => preset.name === payload)
+                presetConfiguration = preset.configuration;
+                userConfiguration.secondaryRoleStrategy = preset.strategy;
+                newState.isCustomPresetTheLastLoadedPreset = false;
+            }
+
+            applyAdvancedSecondaryRoleConfiguration(userConfiguration, presetConfiguration);
+
+            return newState
+        }
+
         case UserConfig.ActionTypes.RenameUserConfiguration: {
             const payload = (action as UserConfig.RenameUserConfigurationAction).payload;
 
@@ -911,40 +1181,13 @@ export function reducer(
         case UserConfig.ActionTypes.ReorderHostConnections: {
             const payload = (action as UserConfig.ReorderHostConnectionsAction).payload;
             const userConfiguration: UserConfiguration = Object.assign(new UserConfiguration(), state.userConfiguration);
-            const processedConnectionActions = new WeakSet<ConnectionsAction>()
+            // Connections actions bind to slots rather than to hosts, so reordering deliberately
+            // leaves their hostConnectionId alone: a key bound to slot 3 keeps meaning slot 3, and
+            // now triggers whichever host was moved into that slot.
             userConfiguration.hostConnections = payload.map((reorderedConnection, index) => {
                 if (reorderedConnection.index === index) {
                     return reorderedConnection;
                 }
-
-                userConfiguration.keymaps = userConfiguration.keymaps.map(keymap => {
-                    keymap = Object.assign(new Keymap(), keymap)
-                    keymap.layers = keymap.layers.map(layer => {
-                        layer = Object.assign(new Layer(), layer);
-                        layer.modules = layer.modules.map(module => {
-                            module = Object.assign(new Module(), module);
-                            module.keyActions = module.keyActions.map(keyAction => {
-                                if (keyAction instanceof ConnectionsAction
-                                    && keyAction.hostConnectionId === reorderedConnection.index
-                                    && !processedConnectionActions.has(keyAction)) {
-                                    const newKeyAction = new ConnectionsAction(keyAction);
-                                    newKeyAction.hostConnectionId = index;
-                                    processedConnectionActions.add(newKeyAction);
-
-                                    return newKeyAction;
-                                }
-
-                                return keyAction;
-                            })
-
-                            return module;
-                        })
-
-                        return layer;
-                    })
-
-                    return keymap;
-                })
 
                 const newConnection = new HostConnection(reorderedConnection);
                 newConnection.index = index;
@@ -1013,22 +1256,32 @@ export function reducer(
         case UserConfig.ActionTypes.SetUserConfigurationValue: {
             const payload = (action as UserConfig.SetUserConfigurationValueAction).payload;
             const userConfiguration: UserConfiguration = Object.assign(new UserConfiguration(), state.userConfiguration);
+            const newState = {
+                ...state,
+                userConfiguration,
+            };
             userConfiguration[payload.propertyName] = payload.value;
-            let selectedBacklightingColorIndex = state.selectedBacklightingColorIndex;
 
             if (payload.propertyName === 'backlightingMode') {
-                selectedBacklightingColorIndex = -1;
+                newState.selectedBacklightingColorIndex = -1;
                 if (payload.value === BacklightingMode.PerKeyBacklighting) {
                     userConfiguration.perKeyRgbPresent = true;
                 }
                 setSvgKeyboardCoverColorsOfAllLayer(userConfiguration, state.theme);
             }
 
-            return {
-                ...state,
-                selectedBacklightingColorIndex,
-                userConfiguration
-            };
+            if (ADVANCED_SECONDARY_ROLE_CONFIGURATION_FIELD_SET.has(payload.propertyName as keyof AdvancedSecondaryRoleConfiguration)) {
+                userConfiguration.secondaryRoleStrategy = SecondaryRoleStrategy.Advanced;
+
+                newState.isCustomPresetTheLastLoadedPreset = true
+                newState.customAdvancedSecondaryRoleConfiguration = {} as AdvancedSecondaryRoleConfiguration;
+                for (const fieldName of ADVANCED_SECONDARY_ROLE_CONFIGURATION_FIELD_NAMES) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    (newState.customAdvancedSecondaryRoleConfiguration[fieldName] as any )= userConfiguration[fieldName];
+                }
+            }
+
+            return newState;
         }
 
         case KeymapActions.ActionTypes.EditDescription: {
@@ -1121,8 +1374,9 @@ export function reducer(
             const {index} = (action as DonglePairing.DeleteHostConnectionSuccessAction).payload;
             const userConfiguration: UserConfiguration = Object.assign(new UserConfiguration(), state.userConfiguration);
             userConfiguration.hostConnections = [...state.userConfiguration.hostConnections];
-            userConfiguration.hostConnections.splice(index, 1);
-            userConfiguration.hostConnections.push(emptyHostConnection());
+            // Slots are positional, so deleting empties the slot in place instead of compacting the
+            // array, which would renumber every connection below it.
+            userConfiguration.hostConnections[index] = emptyHostConnection();
 
             return  {
                 ...state,
@@ -1218,6 +1472,8 @@ export const getLayerOptions = (state: State): LayerOption[] => Array
     .from(state.layerOptions.values())
     .sort((a, b) => a.order - b.order);
 export const getSelectedLayerOption = (state: State): LayerOption => state.selectedLayerOption;
+export const getHasCopiedLayer = (state: State): boolean => !!state.copiedLayer;
+export const getCopiedLayerOrigin = (state: State): CopiedLayerOrigin | undefined => state.copiedLayerOrigin;
 export const getSelectedMacroAction = (state: State): SelectedMacroAction => state.selectedMacroAction;
 export const getSelectedModuleConfiguration = (state: State): ModuleConfiguration => {
     if(!state.selectedModuleConfigurationId) {
@@ -1250,6 +1506,45 @@ export const backlightingColorPalette = (state: State): Array<RgbColorInterface>
 export const isBacklightingColoring = (state: State): boolean => state.selectedBacklightingColorIndex > -1;
 export const selectedBacklightingColor = (state: State): RgbColorInterface => state.backlightingColorPalette[state.selectedBacklightingColorIndex];
 export const selectedBacklightingColorIndex = (state: State): number => state.selectedBacklightingColorIndex;
+export const calculateTypingBehaviorPresets = (state: State): TypingBehaviorPreset[] => {
+    const currentConfiguration = extractAdvancedSecondaryRoleConfiguration(state.userConfiguration);
+
+    let hasMatches = false;
+
+    const result: TypingBehaviorPreset[] =  BUILTIN_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESETS.map(preset => {
+        if (preset.name === SIMPLE_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET_NAME) {
+            hasMatches = !state.isCustomPresetTheLastLoadedPreset && state.userConfiguration.secondaryRoleStrategy === SecondaryRoleStrategy.Simple;
+
+            return {
+                ...preset,
+                selected: hasMatches,
+            }
+        }
+
+        if (!state.isCustomPresetTheLastLoadedPreset && isEqual(preset.configuration, currentConfiguration)) {
+            hasMatches = true;
+            return {
+                ...preset,
+                selected: true,
+            }
+        }
+
+        return {
+            ...preset,
+            selected: false,
+        }
+    })
+
+    result.push({
+        name: CUSTOM_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET_NAME,
+        strategy: SecondaryRoleStrategy.Advanced,
+        tooltip: CUSTOM_ADVANCED_SECONDARY_ROLE_TOOLTIP,
+        configuration: currentConfiguration,
+        selected: !hasMatches,
+    })
+
+    return result
+}
 
 function generateAbbr(keymaps: Keymap[], abbr: string): string {
     const chars: string[] = '23456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
@@ -1297,7 +1592,7 @@ function generateName(items: { name: string }[], name: string) {
 
 function generateMacroId(macros: Macro[]) {
     let newId = 0;
-    let usedMacroIds = new Set();
+    const usedMacroIds = new Set();
 
     macros.forEach((macro: Macro) => {
         if (macro.id > newId) {
@@ -1309,10 +1604,10 @@ function generateMacroId(macros: Macro[]) {
 
     newId += 1;
 
-    if (newId <= Constants.MAX_ALLOWED_MACROS)
+    if (newId <= MAX_ALLOWED_MACROS)
         return newId;
 
-    for (let i = 0; i <= Constants.MAX_ALLOWED_MACROS; i++) {
+    for (let i = 0; i <= MAX_ALLOWED_MACROS; i++) {
         if (!usedMacroIds.has(i)) {
             return i;
         }
@@ -1340,6 +1635,7 @@ function insertItemInNameOrder<T extends { name: string }>(
     return newItems;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function checkExistence(layers: Layer[], property: string, value: any): Layer[] {
     const keyActionsToClear: {
         layerIdx: number,
@@ -1433,7 +1729,6 @@ function saveKeyAction(userConfig: UserConfiguration, action: KeymapActions.Save
     const newKeyAction = keyActionRemap.action;
     const newKeymap: Keymap = payload.keymap;
     const isSwitchLayerAction = newKeyAction instanceof SwitchLayerAction;
-    const isSwitchKeymapAction = newKeyAction instanceof SwitchKeymapAction;
     const oldKeyAction = newKeymap
         .layers.find(layer => layer.id === layerIndex)
         .modules.find(findModuleById(moduleIndex)).keyActions[keyIndex];
@@ -1441,11 +1736,6 @@ function saveKeyAction(userConfig: UserConfiguration, action: KeymapActions.Save
 
     const userConfiguration: UserConfiguration = Object.assign(new UserConfiguration(), userConfig);
     userConfiguration.keymaps = userConfig.keymaps.map(keymap => {
-        // SwitchKeymapAction not allow to refer to itself
-        if (isSwitchKeymapAction && keymap.abbreviation === (newKeyAction as any).keymapAbbreviation) {
-            return keymap;
-        }
-
         if (keyActionRemap.remapOnAllKeymap || keymap.abbreviation === newKeymap.abbreviation) {
             keymap = Object.assign(new Keymap, keymap);
             keymap.layers = keymap.layers.map(layer => {
@@ -1488,6 +1778,7 @@ function getKeyActionByExchangeKey(userConfig: UserConfiguration, exchangeKey: E
 }
 
 function reassignUserConfig(state: State): State {
+    // TODO: use UserConfiguration.clone()
     const userConfiguration = Object.assign(new UserConfiguration(), state.userConfiguration);
     userConfiguration.keymaps = userConfiguration.keymaps.map(keymap => new Keymap(keymap));
     userConfiguration.macros = userConfiguration.macros.map(macro => new Macro(macro));
@@ -1523,6 +1814,21 @@ function addNewMacroToState(state: State): State {
     };
 }
 
+/**
+ * Returns the slot a newly paired device should occupy: the one the firmware asked for when it is
+ * free, otherwise the first empty slot, or -1 when every slot is taken.
+ */
+function findHostConnectionSlot(hostConnections: HostConnection[], preferredSlot: number | undefined): number {
+    const isSlotEmpty = (slot: number): boolean =>
+        slot >= 0 && slot < hostConnections.length && hostConnections[slot].type === HostConnections.Empty;
+
+    if (preferredSlot !== undefined && isSlotEmpty(preferredSlot)) {
+        return preferredSlot;
+    }
+
+    return hostConnections.findIndex(hostConnection => hostConnection.type === HostConnections.Empty);
+}
+
 function generateHostConnectionName(hostConnections: HostConnection[], baseName: string): string {
     let iter: number = 1;
     let name = baseName;
@@ -1540,4 +1846,21 @@ function generateHostConnectionName(hostConnections: HostConnection[], baseName:
 
         iter++;
     }
+}
+
+function applyAdvancedSecondaryRoleConfiguration(userConfiguration: UserConfiguration, advancedSecondaryRoleConfiguration: AdvancedSecondaryRoleConfiguration) {
+    for (const fieldName of ADVANCED_SECONDARY_ROLE_CONFIGURATION_FIELD_NAMES) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (userConfiguration[fieldName] as any) = advancedSecondaryRoleConfiguration[fieldName];
+    }
+
+}
+
+function extractAdvancedSecondaryRoleConfiguration(userConfiguration: UserConfiguration): AdvancedSecondaryRoleConfiguration {
+    return ADVANCED_SECONDARY_ROLE_CONFIGURATION_FIELD_NAMES.reduce((config, fieldName) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (config[fieldName] as any) = userConfiguration[fieldName];
+
+        return config;
+    }, {} as AdvancedSecondaryRoleConfiguration);
 }

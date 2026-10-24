@@ -1,8 +1,6 @@
-import fse from 'fs-extra';
 import isRoot from 'is-root';
 import { Device, HIDAsync } from 'node-hid';
 import * as path from 'path';
-import semver from 'semver';
 import { SerialPort } from 'serialport';
 import {
     ALL_UHK_DEVICES,
@@ -14,11 +12,14 @@ import {
     FIRMWARE_UPGRADE_METHODS,
     HalvesInfo,
     isBitSet,
+    isDeviceProtocolSupportNewPairingsWithSlots,
     isEqualArray,
+    isVersionLt,
     LeftSlotModules,
     LogService,
     mapI2cAddressToModuleName,
     ModuleSlotToI2cAddress,
+    NewPairedDevice,
     ProtocolVersions,
     RightSlotModules,
     UdevRulesInfo,
@@ -29,6 +30,8 @@ import {
     UHK_80_DEVICE_LEFT,
     UHK_VENDOR_ID,
 } from 'uhk-common';
+import { pathExists} from 'uhk-fs';
+
 import {
     DevicePropertyIds,
     EnumerationModes,
@@ -40,6 +43,7 @@ import {
     UsbCommand
 } from './constants.js';
 import {
+    BondState,
     DeviceState,
     PairingInfo,
     ReenumerateOption,
@@ -74,6 +78,7 @@ export const BOOTLOADER_TIMEOUT_MS = 5000;
 export const UHK_HID_DEVICE_NOT_CONNECTED = '[UhkHidDevice] Device is not connected';
 
 const MAX_BLE_ADDRESSES_IN_NEW_PAIRING_RESPONSE = 10;
+const MAX_BLE_ADDRESSES_IN_NEW_PAIRING_WITH_SLOTS_RESPONSE = 8;
 /**
  * HID API wrapper to support unified logging and async write
  */
@@ -225,6 +230,12 @@ export class UhkHidDevice {
     }
 
     public async isPairedWith(address: number[]): Promise<boolean> {
+        const bondState = await this.getBondState(address);
+
+        return bondState.isPaired;
+    }
+
+    public async getBondState(address: number[]): Promise<BondState> {
         await this.assertDeviceSupportWirelessUSBCommands();
 
         this.logService.usbOps('[UhkHidDevice] USB[T]: is paired with');
@@ -233,10 +244,13 @@ export class UhkHidDevice {
             ...address,
         ]);
         const responseBuffer = await this.write(buffer);
-        // 1st byte is the status code we skip it
-        const response = responseBuffer.readUInt8(1);
 
-        return response === 1;
+        // 1st byte is the status code we skip it
+        return {
+            isPaired: responseBuffer.readUInt8(1) === 1,
+            // older firmwares always send 0
+            isBondBroken: responseBuffer.readUInt8(2) === 1,
+        };
     }
 
     public async pairCentral(): Promise<void> {
@@ -281,7 +295,7 @@ export class UhkHidDevice {
     public async isDeviceSupportWirelessUSBCommands(): Promise<boolean> {
         const protocolVersions = await this.getProtocolVersions();
 
-        if (semver.lt(protocolVersions.deviceProtocolVersion, '4.11.0')) {
+        if (isVersionLt(protocolVersions.deviceProtocolVersion, '4.11.0')) {
             return false;
         }
 
@@ -324,6 +338,7 @@ export class UhkHidDevice {
                 rightModuleSlot: RightSlotModules.NoModule
             },
             hardwareModules: {},
+            isHalvesBondBroken: false,
             isMacroStatusDirty: false,
             isZephyrLogAvailable: false,
             leftHalfDetected: false,
@@ -404,7 +419,9 @@ export class UhkHidDevice {
 
         if (result.connectedDevice && result.hasPermission && result.communicationInterfaceAvailable) {
             const deviceState = await this.getDeviceState();
+            result.activeKeymapIndex = deviceState.activeKeymapIndex;
             result.halvesInfo = calculateHalvesState(deviceState);
+            result.isHalvesBondBroken = deviceState.isPeerBondBroken;
             result.isMacroStatusDirty = deviceState.isMacroStatusDirty;
             result.isZephyrLogAvailable = deviceState.isZephyrLogAvailable;
 
@@ -462,7 +479,12 @@ export class UhkHidDevice {
         if (!this._device) {
             return;
         }
-        await this._device.close();
+        try {
+            await this._device.close();
+        }
+        catch (error) {
+            this.logService.error('[UhkHidDevice] Error while closing device communication: ', error);
+        }
         this._device = null;
         this.setDeviceInfo(undefined);
         this.logService.misc('[UhkHidDevice] Device communication closed.');
@@ -483,7 +505,7 @@ export class UhkHidDevice {
 
         while (new Date().getTime() - startTime.getTime() < waitTimeout) {
             iteration++;
-            let allDevice = [];
+            const allDevice = [];
             for (const vidPid of vidPidPairs) {
 
                 if (enumerationMode === EnumerationModes.Bootloader && device.firmwareUpgradeMethod === FIRMWARE_UPGRADE_METHODS.MCUBOOT) {
@@ -590,8 +612,8 @@ export class UhkHidDevice {
         throw new Error(`Could not reenumerate as ${reenumMode}`);
     }
 
-    async sendKbootCommandToModule(module: ModuleSlotToI2cAddress, command: KbootCommands, maxTry = 1): Promise<any> {
-        let transfer;
+    async sendKbootCommandToModule(module: ModuleSlotToI2cAddress, command: KbootCommands, maxTry = 1): Promise<void> {
+        let transfer: Buffer;
         this.logService.usbOps(`[UhkHidDevice] USB[T]: Send KbootCommand ${mapI2cAddressToModuleName(module)} ${KbootCommands[command].toString()}`);
         if (command === KbootCommands.idle) {
             transfer = Buffer.from([UsbCommand.SendKbootCommandToModule, command]);
@@ -617,6 +639,7 @@ export class UhkHidDevice {
             isMacroStatusDirty: buffer[7] !== 0,
             areHalvesMerged: isBitSet(buffer[2], 0),
             isLeftHalfConnected: buffer[3] !== 0,
+            activeKeymapIndex: buffer[8],
             activeLayerNumber,
             activeLayerName: LAYER_NUMBER_TO_STRING[activeLayerNumber],
             activeLayerToggled: (buffer[6] & 0x80) === 1,
@@ -624,14 +647,21 @@ export class UhkHidDevice {
             leftModuleSlot: MODULE_ID_TO_STRING[buffer[4]],
             newPairedDevice: isBitSet(buffer[2], 2),
             isZephyrLogAvailable: isBitSet(buffer[2], 3),
+            isPeerBondBroken: isBitSet(buffer[2], 4),
             rightModuleSlot: MODULE_ID_TO_STRING[buffer[5]]
         };
     }
 
-    async getPairedDevices(): Promise<string[]> {
+    async getPairedDevices(): Promise<NewPairedDevice[]> {
+        const protocolVersions = await this.getProtocolVersions();
+
+        if (isDeviceProtocolSupportNewPairingsWithSlots(protocolVersions.deviceProtocolVersion)) {
+            return this.getPairedDevicesWithSlots();
+        }
+
         this.logService.misc('[UhkHidDevice] Read paired devices');
         let iteration = 0;
-        const result: string[] = [];
+        const result: NewPairedDevice[] = [];
 
         while (true) {
             this.logService.usb('[UhkHidDevice] USB[T]: Read paired devices');
@@ -646,14 +676,56 @@ export class UhkHidDevice {
             const count = Math.min(remainingNewConnections, MAX_BLE_ADDRESSES_IN_NEW_PAIRING_RESPONSE);
 
             for (let i = 0; i < count; i++) {
-                const address = [];
+                const address: number[] = [];
                 for (let i = 0; i < BLE_ADDRESS_LENGTH; i++) {
                     address.push(uhkBuffer.readUInt8());
                 }
-                result.push(convertBleAddressArrayToString(address));
+                result.push({ address: convertBleAddressArrayToString(address) });
             }
 
             if (remainingNewConnections <= MAX_BLE_ADDRESSES_IN_NEW_PAIRING_RESPONSE) {
+                break;
+            }
+
+            iteration += 1;
+        }
+
+        return result;
+    }
+
+    /**
+     * Same paging shape as {@link DevicePropertyIds.NewPairings}, but every entry also carries the host
+     * connection slot the firmware wants the bond to end up in, and a page holds 8 entries instead of 10.
+     */
+    private async getPairedDevicesWithSlots(): Promise<NewPairedDevice[]> {
+        this.logService.misc('[UhkHidDevice] Read paired devices with slots');
+        let iteration = 0;
+        const result: NewPairedDevice[] = [];
+
+        while (true) {
+            this.logService.usb('[UhkHidDevice] USB[T]: Read paired devices with slots');
+            const command = Buffer.from([UsbCommand.GetProperty, DevicePropertyIds.NewPairingsWithSlots, iteration]);
+            const buffer = await this.write(command);
+            const uhkBuffer = UhkBuffer.fromArray(convertBufferToIntArray(buffer));
+            // skip the first byte
+            uhkBuffer.readUInt8();
+
+            const remainingNewConnections = uhkBuffer.readUInt8();
+
+            const count = Math.min(remainingNewConnections, MAX_BLE_ADDRESSES_IN_NEW_PAIRING_WITH_SLOTS_RESPONSE);
+
+            for (let i = 0; i < count; i++) {
+                const address: number[] = [];
+                for (let j = 0; j < BLE_ADDRESS_LENGTH; j++) {
+                    address.push(uhkBuffer.readUInt8());
+                }
+                result.push({
+                    address: convertBleAddressArrayToString(address),
+                    slot: uhkBuffer.readUInt8(),
+                });
+            }
+
+            if (remainingNewConnections <= MAX_BLE_ADDRESSES_IN_NEW_PAIRING_WITH_SLOTS_RESPONSE) {
                 break;
             }
 
@@ -709,11 +781,11 @@ export class UhkHidDevice {
             return UdevRulesInfo.Ok;
         }
 
-        if (!(await fse.pathExists('/etc/udev'))) {
+        if (!(await pathExists('/etc/udev'))) {
             return UdevRulesInfo.UdevDirNotExists;
         }
 
-        if (!(await fse.pathExists('/etc/udev/rules.d/50-uhk60.rules'))) {
+        if (!(await pathExists('/etc/udev/rules.d/50-uhk60.rules'))) {
             return UdevRulesInfo.NeedToSetup;
         }
 
@@ -781,7 +853,7 @@ export class UhkHidDevice {
             const device = await HIDAsync.open(this._deviceInfo.path);
             if (this.options['usb-non-blocking']) {
                 this.logService.misc('[UhkHidDevice] set non blocking communication mode');
-                await this._device.setNonBlocking(1 as any);
+                await this._device.setNonBlocking(true);
             }
             this.logService.misc('[UhkHidDevice] Used device:', JSON.stringify(this._deviceInfo, usbDeviceJsonFormatter));
             return device;
